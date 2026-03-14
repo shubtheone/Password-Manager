@@ -1,9 +1,10 @@
 # Family Vault – Password & Notes Manager
 
-Diagram:
+## How it works (flowchart)
 
+![Flowchart of how Family Vault works](Images/Screenshot%202026-03-15%20003842.png)
 
-
+---
 
 A self-hosted password and notes manager for your family. Data is stored in JSON files and encrypted with AES-256-GCM using a key derived from your keyword. Runs on Node.js so you can host it on a tablet via Termux and access it from your laptop over Tailscale.
 
