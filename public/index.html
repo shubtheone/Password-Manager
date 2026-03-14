@@ -4,12 +4,16 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Family Vault</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <div id="app">
     <div id="profile-screen">
       <header class="profile-header">
+        <button type="button" id="theme-toggle-profile" class="theme-toggle-btn" title="Toggle light/dark">☀</button>
         <h1>Family Vault</h1>
         <p>Choose a profile or add one</p>
       </header>
@@ -22,7 +26,10 @@
         <h2>Enter your keyword</h2>
         <p class="auth-subtitle" id="auth-user-name"></p>
         <form id="login-form">
-          <input type="password" id="login-keyword" placeholder="Keyword" autocomplete="off" required />
+          <div class="input-eye-row">
+            <input type="password" id="login-keyword" placeholder="Keyword" autocomplete="off" required />
+            <button type="button" class="eye-btn" data-target="login-keyword" title="Show/hide">👁</button>
+          </div>
           <button type="submit">Open vault</button>
         </form>
         <button type="button" id="auth-back" class="text-btn">← Back to profiles</button>
@@ -34,9 +41,16 @@
         <h2>Create profile</h2>
         <form id="create-user-form">
           <input type="text" id="create-name" placeholder="Profile name" required />
-          <input type="password" id="create-keyword" placeholder="Keyword (min 4 characters)" minlength="4" autocomplete="off" required />
+          <input type="password" id="create-keyword" placeholder="Keyword" autocomplete="off" required minlength="8" />
+          <ul id="keyword-requirements" class="keyword-requirements">
+            <li id="kw-len">At least 8 characters</li>
+            <li id="kw-upper">One uppercase letter</li>
+            <li id="kw-lower">One lowercase letter</li>
+            <li id="kw-num">One number</li>
+            <li id="kw-sym">One symbol (!@#$%^&*…)</li>
+          </ul>
           <p class="hint">This keyword unlocks your vault and encrypts your data. Remember it — we cannot recover it.</p>
-          <button type="submit">Create profile</button>
+          <button type="submit" id="create-submit-btn">Create profile</button>
         </form>
         <button type="button" id="create-back" class="text-btn">← Back</button>
       </div>
@@ -46,8 +60,54 @@
       <header class="vault-header">
         <h1>Family Vault</h1>
         <span id="vault-user-name" class="vault-user"></span>
-        <button type="button" id="logout-btn" class="logout-btn">Log out</button>
+        <div class="header-actions">
+          <button type="button" id="theme-toggle-vault" class="icon-btn" title="Toggle light/dark">☀</button>
+          <button type="button" id="settings-btn" class="icon-btn" title="Settings">⚙</button>
+          <button type="button" id="lock-btn" class="icon-btn" title="Lock vault">🔒</button>
+          <button type="button" id="logout-btn" class="logout-btn">Log out</button>
+        </div>
       </header>
+      <div id="settings-panel" class="settings-panel hidden">
+        <div class="settings-section">
+          <h4>Auto-lock</h4>
+          <label class="toggle-row">
+            <input type="checkbox" id="auto-lock-toggle" />
+            <span>Lock vault after inactivity</span>
+          </label>
+          <div id="auto-lock-options" class="auto-lock-options">
+            <label>After</label>
+            <select id="auto-lock-minutes">
+              <option value="2">2 min</option>
+              <option value="5" selected>5 min</option>
+              <option value="10">10 min</option>
+              <option value="15">15 min</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-section">
+          <h4>Backup</h4>
+          <button type="button" id="export-backup-btn" class="block-btn">Export encrypted backup</button>
+          <div class="import-row">
+            <input type="file" id="import-backup-file" accept=".enc,application/octet-stream" class="hidden" />
+            <button type="button" id="import-backup-btn" class="block-btn secondary">Import backup</button>
+          </div>
+          <p id="import-mode-hint" class="hint hidden">Choose: <button type="button" id="import-mode-replace" class="link-btn">Replace all</button> or <button type="button" id="import-mode-merge" class="link-btn">Merge</button></p>
+        </div>
+      </div>
+      <div id="lock-overlay" class="lock-overlay hidden">
+        <div class="auth-box lock-box">
+          <h2>Vault locked</h2>
+          <p class="auth-subtitle" id="lock-user-name"></p>
+          <form id="unlock-form">
+            <div class="input-eye-row">
+              <input type="password" id="unlock-keyword" placeholder="Keyword" autocomplete="off" required />
+              <button type="button" class="eye-btn" data-target="unlock-keyword" title="Show/hide">👁</button>
+            </div>
+            <button type="submit">Unlock</button>
+          </form>
+          <button type="button" id="unlock-logout" class="text-btn">Log out</button>
+        </div>
+      </div>
       <nav class="vault-tabs">
         <button type="button" data-tab="passwords" class="tab active">Passwords</button>
         <button type="button" data-tab="notes" class="tab">Notes</button>
@@ -83,6 +143,7 @@
         <label>Password</label>
         <div class="password-row">
           <input type="password" id="password-value" placeholder="Password" />
+          <button type="button" class="eye-btn" data-target="password-value" title="Show/hide">👁</button>
           <button type="button" id="generate-password-btn" class="small-btn" title="Generate strong password">Generate</button>
         </div>
         <label>Email</label>

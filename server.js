@@ -11,7 +11,40 @@ const {
   getVault,
   saveVault,
   generateStrongPassword,
+  encryptVaultToBackup,
+  decryptBackupToVault,
 } = require('./crypto-utils');
+
+const KEYWORD_MIN_LENGTH = 8;
+const KEYWORD_RULES = {
+  minLength: KEYWORD_MIN_LENGTH,
+  requireUppercase: true,
+  requireLowercase: true,
+  requireNumber: true,
+  requireSymbol: true,
+};
+const SYMBOLS = '!@#$%^&*()_+-=[]{}|;:,.<>?';
+
+function validateKeywordStrong(keyword) {
+  if (typeof keyword !== 'string') return { valid: false, error: 'Keyword is required' };
+  if (keyword.length < KEYWORD_MIN_LENGTH) {
+    return { valid: false, error: `Keyword must be at least ${KEYWORD_MIN_LENGTH} characters` };
+  }
+  if (KEYWORD_RULES.requireUppercase && !/[A-Z]/.test(keyword)) {
+    return { valid: false, error: 'Keyword must contain at least one uppercase letter' };
+  }
+  if (KEYWORD_RULES.requireLowercase && !/[a-z]/.test(keyword)) {
+    return { valid: false, error: 'Keyword must contain at least one lowercase letter' };
+  }
+  if (KEYWORD_RULES.requireNumber && !/\d/.test(keyword)) {
+    return { valid: false, error: 'Keyword must contain at least one number' };
+  }
+  if (KEYWORD_RULES.requireSymbol) {
+    const hasSymbol = [...SYMBOLS].some((s) => keyword.includes(s));
+    if (!hasSymbol) return { valid: false, error: 'Keyword must contain at least one symbol (!@#$%^&* etc.)' };
+  }
+  return { valid: true, error: null };
+}
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -22,7 +55,7 @@ const loginAttempts = new Map();
 
 ensureDataDir();
 
-app.use(express.json());
+app.use(express.json({ limit: '15mb' }));
 app.use(
   session({
     secret: process.env.SESSION_SECRET || crypto.randomBytes(32).toString('hex'),
@@ -83,7 +116,8 @@ app.post('/api/users', (req, res) => {
   }
   const trimmedName = name.trim();
   if (!trimmedName) return res.status(400).json({ error: 'Name cannot be empty' });
-  if (keyword.length < 4) return res.status(400).json({ error: 'Keyword must be at least 4 characters' });
+  const kwValidation = validateKeywordStrong(keyword);
+  if (!kwValidation.valid) return res.status(400).json({ error: kwValidation.error });
 
   const users = getUsers();
   if (users.some((u) => u.name.toLowerCase() === trimmedName.toLowerCase())) {
@@ -133,7 +167,7 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/auth/check', (req, res) => {
   if (req.session && req.session.userId && req.session.keyword) {
-    return res.json({ authenticated: true, userName: req.session.userName });
+    return res.json({ authenticated: true, userName: req.session.userName, userId: req.session.userId });
   }
   res.json({ authenticated: false });
 });
@@ -232,6 +266,57 @@ app.delete('/api/vault/notes/:id', requireAuth, (req, res) => {
 app.get('/api/vault/generate-password', requireAuth, (req, res) => {
   const length = Math.min(64, Math.max(12, parseInt(req.query.length, 10) || 20));
   res.json({ password: generateStrongPassword(length) });
+});
+
+app.post('/api/keyword/validate', (req, res) => {
+  const { keyword } = req.body || {};
+  const result = validateKeywordStrong(keyword);
+  res.json({ valid: result.valid, error: result.error, rules: KEYWORD_RULES });
+});
+
+app.get('/api/vault/export', requireAuth, (req, res) => {
+  try {
+    const vault = getVault(req.session.userId, req.session.keyword);
+    const encrypted = encryptVaultToBackup(vault, req.session.keyword);
+    const filename = `family-vault-backup-${new Date().toISOString().slice(0, 10)}.enc`;
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(encrypted);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Export failed' });
+  }
+});
+
+app.post('/api/vault/import', requireAuth, (req, res) => {
+  const { data: dataBase64, mode } = req.body || {};
+  if (!dataBase64 || typeof dataBase64 !== 'string') {
+    return res.status(400).json({ error: 'Backup file data is required' });
+  }
+  const modeOk = mode === 'replace' || mode === 'merge';
+  if (!modeOk) return res.status(400).json({ error: 'Mode must be "replace" or "merge"' });
+  try {
+    const raw = Buffer.from(dataBase64, 'base64').toString('utf8');
+    const imported = decryptBackupToVault(raw, req.session.keyword);
+    let vault = getVault(req.session.userId, req.session.keyword);
+    if (mode === 'replace') {
+      vault = { passwords: imported.passwords, notes: imported.notes };
+    } else {
+      const existingIds = new Set([
+        ...vault.passwords.map((p) => p.id),
+        ...vault.notes.map((n) => n.id),
+      ]);
+      const newPasswords = imported.passwords.filter((p) => !existingIds.has(p.id));
+      const newNotes = imported.notes.filter((n) => !existingIds.has(n.id));
+      vault = {
+        passwords: [...vault.passwords, ...newPasswords],
+        notes: [...vault.notes, ...newNotes],
+      };
+    }
+    saveVault(req.session.userId, req.session.keyword, vault);
+    res.json({ success: true, vault: { passwords: vault.passwords.length, notes: vault.notes.length } });
+  } catch (e) {
+    res.status(400).json({ error: 'Invalid or corrupted backup file, or wrong keyword' });
+  }
 });
 
 app.get('*', (req, res) => {

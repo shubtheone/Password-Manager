@@ -14,17 +14,27 @@ const showScreen = (name) => {
   if (s) s.classList.remove('hidden');
 };
 
+const AUTO_LOCK_STORAGE_KEY = 'familyVault_autoLock';
+const AUTO_LOCK_MINUTES_KEY = 'familyVault_autoLockMinutes';
+
 let state = {
   users: [],
   selectedUserId: null,
+  userId: null,
   vault: { passwords: [], notes: [] },
   passwordFilter: '',
   noteFilter: '',
+  locked: false,
+  autoLockEnabled: false,
+  autoLockMinutes: 5,
+  inactivityTimerId: null,
+  pendingImportFile: null,
 };
 
 async function api(path, options = {}) {
   const res = await fetch(path, {
     ...options,
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...options.headers },
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
   });
@@ -36,9 +46,9 @@ async function api(path, options = {}) {
   return data;
 }
 
-function toast(msg) {
+function toast(msg, isSuccess = false) {
   const el = document.createElement('div');
-  el.className = 'error-toast';
+  el.className = isSuccess ? 'error-toast success-toast' : 'error-toast';
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 3500);
@@ -88,17 +98,51 @@ async function loadUsers() {
 $('add-profile-btn')?.addEventListener('click', () => {
   $('create-name').value = '';
   $('create-keyword').value = '';
+  updateKeywordRequirements('');
   showScreen('createUser');
   setTimeout(() => $('create-name').focus(), 100);
 });
 
 $('create-back')?.addEventListener('click', () => showScreen('profile'));
 
+function validateKeywordClient(keyword) {
+  const len = keyword.length >= 8;
+  const upper = /[A-Z]/.test(keyword);
+  const lower = /[a-z]/.test(keyword);
+  const num = /\d/.test(keyword);
+  const sym = /[!@#$%^&*()_+\-=[\]{}|;:,.<>?]/.test(keyword);
+  return { len, upper, lower, num, sym, all: len && upper && lower && num && sym };
+}
+
+function updateKeywordRequirements(keyword) {
+  const v = validateKeywordClient(keyword);
+  const ids = ['kw-len', 'kw-upper', 'kw-lower', 'kw-num', 'kw-sym'];
+  const keys = ['len', 'upper', 'lower', 'num', 'sym'];
+  keys.forEach((k, i) => {
+    const el = $(ids[i]);
+    if (el) el.classList.toggle('met', v[k]);
+  });
+  const submitBtn = $('create-submit-btn');
+  if (submitBtn) submitBtn.disabled = !v.all;
+}
+
+$('create-keyword')?.addEventListener('input', () => {
+  updateKeywordRequirements($('create-keyword').value);
+});
+
+$('create-keyword')?.addEventListener('focus', () => {
+  updateKeywordRequirements($('create-keyword').value);
+});
+
 $('create-user-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = $('create-name').value.trim();
   const keyword = $('create-keyword').value;
   if (!name || !keyword) return;
+  if (!validateKeywordClient(keyword).all) {
+    toast('Keyword does not meet all requirements');
+    return;
+  }
   try {
     await api('/api/users', { method: 'POST', body: { name, keyword } });
     await loadUsers();
@@ -120,8 +164,12 @@ $('login-form')?.addEventListener('submit', async (e) => {
   try {
     const data = await api('/api/auth/login', { method: 'POST', body: { userId: state.selectedUserId, keyword } });
     state.userName = data.userName || '';
+    state.userId = state.selectedUserId;
     await loadVault();
     $('vault-user-name').textContent = state.userName || '';
+    state.locked = false;
+    loadAutoLockSettings();
+    startInactivityTimer();
     showScreen('vault');
     $('password-search').value = '';
     $('note-search').value = '';
@@ -139,15 +187,135 @@ async function loadVault() {
   state.vault = data;
   const check = await api('/api/auth/check');
   state.userName = check.userName;
+  if (check.userId) state.userId = check.userId;
 }
+
+function loadAutoLockSettings() {
+  try {
+    const stored = localStorage.getItem(AUTO_LOCK_STORAGE_KEY);
+    const minutes = localStorage.getItem(AUTO_LOCK_MINUTES_KEY);
+    state.autoLockEnabled = stored === 'true';
+    state.autoLockMinutes = minutes ? parseInt(minutes, 10) : 5;
+    const toggle = $('auto-lock-toggle');
+    const select = $('auto-lock-minutes');
+    if (toggle) toggle.checked = state.autoLockEnabled;
+    if (select) select.value = String(state.autoLockMinutes);
+  } catch (_) {}
+}
+
+function startInactivityTimer() {
+  stopInactivityTimer();
+  if (!state.autoLockEnabled) return;
+  const ms = state.autoLockMinutes * 60 * 1000;
+  state.inactivityTimerId = setTimeout(() => {
+    state.locked = true;
+    state.vault = { passwords: [], notes: [] };
+    $('lock-user-name').textContent = state.userName || '';
+    $('unlock-keyword').value = '';
+    $('lock-overlay').classList.remove('hidden');
+    stopInactivityTimer();
+  }, ms);
+}
+
+function stopInactivityTimer() {
+  if (state.inactivityTimerId) {
+    clearTimeout(state.inactivityTimerId);
+    state.inactivityTimerId = null;
+  }
+}
+
+function resetInactivityTimer() {
+  if (state.autoLockEnabled && !state.locked) {
+    startInactivityTimer();
+  }
+}
+
+$('auto-lock-toggle')?.addEventListener('change', (e) => {
+  state.autoLockEnabled = e.target.checked;
+  localStorage.setItem(AUTO_LOCK_STORAGE_KEY, String(state.autoLockEnabled));
+  if (state.autoLockEnabled) startInactivityTimer();
+  else stopInactivityTimer();
+});
+
+$('auto-lock-minutes')?.addEventListener('change', (e) => {
+  state.autoLockMinutes = parseInt(e.target.value, 10);
+  localStorage.setItem(AUTO_LOCK_MINUTES_KEY, String(state.autoLockMinutes));
+  if (state.autoLockEnabled) startInactivityTimer();
+});
+
+$('settings-btn')?.addEventListener('click', () => {
+  const panel = $('settings-panel');
+  if (panel.classList.contains('hidden')) {
+    panel.classList.remove('hidden');
+    loadAutoLockSettings();
+  } else {
+    panel.classList.add('hidden');
+  }
+});
+
+$('lock-btn')?.addEventListener('click', () => {
+  state.locked = true;
+  state.vault = { passwords: [], notes: [] };
+  $('lock-user-name').textContent = state.userName || '';
+  $('unlock-keyword').value = '';
+  $('lock-overlay').classList.remove('hidden');
+  stopInactivityTimer();
+});
+
+document.addEventListener('click', (e) => {
+  const panel = $('settings-panel');
+  if (panel && !panel.classList.contains('hidden') && !panel.contains(e.target) && !$('settings-btn')?.contains(e.target)) {
+    panel.classList.add('hidden');
+  }
+});
+
+$('unlock-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const keyword = $('unlock-keyword').value;
+  const userId = state.userId;
+  if (!userId || !keyword) return;
+  try {
+    await api('/api/auth/login', { method: 'POST', body: { userId, keyword } });
+    await loadVault();
+    state.locked = false;
+    $('lock-overlay').classList.add('hidden');
+    startInactivityTimer();
+    renderPasswords();
+    renderNotes();
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+$('unlock-logout')?.addEventListener('click', async () => {
+  await api('/api/auth/logout', { method: 'POST' });
+  state.selectedUserId = null;
+  state.userId = null;
+  state.vault = { passwords: [], notes: [] };
+  state.locked = false;
+  $('lock-overlay').classList.add('hidden');
+  showScreen('profile');
+  loadUsers();
+});
 
 $('logout-btn')?.addEventListener('click', async () => {
   await api('/api/auth/logout', { method: 'POST' });
   state.selectedUserId = null;
+  state.userId = null;
   state.vault = { passwords: [], notes: [] };
+  state.locked = false;
   showScreen('profile');
   loadUsers();
 });
+
+function setupVaultActivityListeners() {
+  const vault = $('vault-screen');
+  if (!vault) return;
+  const reset = () => resetInactivityTimer();
+  vault.addEventListener('click', reset);
+  vault.addEventListener('keydown', reset);
+  vault.addEventListener('input', reset);
+}
 
 $$('.vault-tabs .tab').forEach((tab) => {
   tab.addEventListener('click', () => {
@@ -202,16 +370,20 @@ function renderPasswords() {
     )
     .join('');
   list.querySelectorAll('.edit-password').forEach((btn) => {
-    const item = btn.closest('.list-item');
-    if (!item) return;
-    const id = item.dataset.id;
-    const p = state.vault.passwords.find((x) => x.id === id);
-    if (p) openPasswordModal(p);
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.list-item');
+      if (!item) return;
+      const id = item.dataset.id;
+      const p = state.vault.passwords.find((x) => x.id === id);
+      if (p) openPasswordModal(p);
+    });
   });
   list.querySelectorAll('.delete-password').forEach((btn) => {
-    const item = btn.closest('.list-item');
-    if (!item) return;
-    deletePassword(item.dataset.id);
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.list-item');
+      if (!item) return;
+      deletePassword(item.dataset.id);
+    });
   });
 }
 
@@ -239,16 +411,20 @@ function renderNotes() {
     )
     .join('');
   list.querySelectorAll('.edit-note').forEach((btn) => {
-    const item = btn.closest('.list-item');
-    if (!item) return;
-    const id = item.dataset.id;
-    const n = state.vault.notes.find((x) => x.id === id);
-    if (n) openNoteModal(n);
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.list-item');
+      if (!item) return;
+      const id = item.dataset.id;
+      const n = state.vault.notes.find((x) => x.id === id);
+      if (n) openNoteModal(n);
+    });
   });
   list.querySelectorAll('.delete-note').forEach((btn) => {
-    const item = btn.closest('.list-item');
-    if (!item) return;
-    deleteNote(item.dataset.id);
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.list-item');
+      if (!item) return;
+      deleteNote(item.dataset.id);
+    });
   });
 }
 
@@ -293,8 +469,16 @@ $('add-note-btn')?.addEventListener('click', () => openNoteModal());
 $('password-cancel')?.addEventListener('click', () => $('modal-overlay').classList.add('hidden'));
 $('note-cancel')?.addEventListener('click', () => $('modal-overlay').classList.add('hidden'));
 
-$('modal-overlay')?.addEventListener('click', (e) => {
-  if (e.target === $('modal-overlay')) $('modal-overlay').classList.add('hidden');
+/* Modal only closes via Cancel/Save buttons, not by clicking outside */
+
+document.querySelectorAll('.eye-btn').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    const target = $(btn.dataset.target);
+    if (!target) return;
+    const showing = target.type === 'text';
+    target.type = showing ? 'password' : 'text';
+    btn.textContent = showing ? '👁' : '🙈';
+  });
 });
 
 $('generate-password-btn')?.addEventListener('click', async () => {
@@ -307,6 +491,63 @@ $('generate-password-btn')?.addEventListener('click', async () => {
     toast(err.message);
   }
 });
+
+$('export-backup-btn')?.addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/vault/export', { credentials: 'include', method: 'GET' });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.error || 'Export failed');
+    }
+    const blob = await res.blob();
+    const filename = res.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] || `family-vault-backup-${new Date().toISOString().slice(0, 10)}.enc`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('Backup downloaded', true);
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+$('import-backup-btn')?.addEventListener('click', () => {
+  $('import-backup-file').click();
+});
+
+$('import-backup-file')?.addEventListener('change', (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  state.pendingImportFile = file;
+  $('import-mode-hint').classList.remove('hidden');
+  e.target.value = '';
+});
+
+function doImport(mode) {
+  const file = state.pendingImportFile;
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async () => {
+    let dataBase64 = reader.result;
+    if (dataBase64.startsWith('data:')) dataBase64 = dataBase64.split(',')[1];
+    try {
+      await api('/api/vault/import', { method: 'POST', body: { data: dataBase64, mode } });
+      state.pendingImportFile = null;
+      $('import-mode-hint').classList.add('hidden');
+      await loadVault();
+      renderPasswords();
+      renderNotes();
+      toast('Backup imported', true);
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+$('import-mode-replace')?.addEventListener('click', () => doImport('replace'));
+$('import-mode-merge')?.addEventListener('click', () => doImport('merge'));
 
 $('password-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -375,12 +616,41 @@ async function deleteNote(id) {
   }
 }
 
+const THEME_KEY = 'familyVault_theme';
+
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem(THEME_KEY, theme);
+  const icon = theme === 'light' ? '🌙' : '☀';
+  const profileBtn = $('theme-toggle-profile');
+  const vaultBtn = $('theme-toggle-vault');
+  if (profileBtn) profileBtn.textContent = icon;
+  if (vaultBtn) vaultBtn.textContent = icon;
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  applyTheme(current === 'dark' ? 'light' : 'dark');
+}
+
+(function initTheme() {
+  const saved = localStorage.getItem(THEME_KEY) || 'dark';
+  applyTheme(saved);
+})();
+
+$('theme-toggle-profile')?.addEventListener('click', toggleTheme);
+$('theme-toggle-vault')?.addEventListener('click', toggleTheme);
+
 async function init() {
   const check = await api('/api/auth/check');
   if (check.authenticated) {
     state.userName = check.userName;
+    state.userId = check.userId;
     await loadVault();
     $('vault-user-name').textContent = state.userName || '';
+    loadAutoLockSettings();
+    startInactivityTimer();
+    setupVaultActivityListeners();
     showScreen('vault');
     renderPasswords();
     renderNotes();
@@ -388,6 +658,7 @@ async function init() {
     await loadUsers();
     showScreen('profile');
   }
+  updateKeywordRequirements($('create-keyword')?.value || '');
 }
 
 init().catch(() => {

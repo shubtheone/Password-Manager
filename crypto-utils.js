@@ -164,6 +164,40 @@ function generateStrongPassword(length = 20) {
   return result;
 }
 
+function encryptVaultToBackup(vault, keyword) {
+  const json = JSON.stringify({
+    passwords: vault.passwords || [],
+    notes: vault.notes || [],
+  });
+  return encryptVaultData(json, keyword);
+}
+
+function decryptBackupToVault(raw, keyword) {
+  const { plainText } = tryDecryptVaultData(raw, keyword);
+  if (!plainText) return { passwords: [], notes: [] };
+  const vault = JSON.parse(plainText);
+  return {
+    passwords: Array.isArray(vault.passwords) ? vault.passwords : [],
+    notes: Array.isArray(vault.notes) ? vault.notes : [],
+  };
+}
+
+/**
+ * Dev recovery only: reset a user's keyword and wipe their vault.
+ * Old vault data cannot be recovered. Use when someone forgets their keyword.
+ */
+function resetUserKeyword(userId, newKeyword) {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) throw new Error('User not found');
+  const { salt, hash } = hashKeyword(newKeyword);
+  users[idx] = { ...users[idx], salt, hash };
+  saveUsers(users);
+  const vaultPath = getVaultPath(userId);
+  if (fs.existsSync(vaultPath)) fs.unlinkSync(vaultPath);
+  saveVault(userId, newKeyword, { passwords: [], notes: [] });
+}
+
 module.exports = {
   ensureDataDir,
   getUsers,
@@ -176,4 +210,7 @@ module.exports = {
   writeVaultEncrypted,
   getVaultPath,
   generateStrongPassword,
+  encryptVaultToBackup,
+  decryptBackupToVault,
+  resetUserKeyword,
 };
