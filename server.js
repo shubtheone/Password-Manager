@@ -13,6 +13,7 @@ const {
   generateStrongPassword,
   encryptVaultToBackup,
   decryptBackupToVault,
+  resetUserKeyword,
 } = require('./crypto-utils');
 
 const KEYWORD_MIN_LENGTH = 8;
@@ -318,6 +319,29 @@ app.post('/api/vault/import', requireAuth, (req, res) => {
     res.status(400).json({ error: 'Invalid or corrupted backup file, or wrong keyword' });
   }
 });
+
+/* Dev-only: reset a profile's keyword (wipes vault; old data is unrecoverable). Only available when DEV_RECOVERY_SECRET is set. */
+if (process.env.DEV_RECOVERY_SECRET) {
+  app.post('/api/dev/reset-profile', (req, res) => {
+    const { secret, userId, newKeyword } = req.body || {};
+    if (secret !== process.env.DEV_RECOVERY_SECRET) {
+      return res.status(403).json({ error: 'Invalid secret' });
+    }
+    if (!userId || !newKeyword) {
+      return res.status(400).json({ error: 'userId and newKeyword are required' });
+    }
+    const kwValidation = validateKeywordStrong(newKeyword);
+    if (!kwValidation.valid) {
+      return res.status(400).json({ error: kwValidation.error });
+    }
+    try {
+      resetUserKeyword(userId, newKeyword);
+      res.json({ success: true, message: 'Profile reset. They can log in with the new keyword. Vault is empty.' });
+    } catch (e) {
+      res.status(400).json({ error: e.message || 'Reset failed' });
+    }
+  });
+}
 
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));

@@ -1,5 +1,10 @@
 # Family Vault – Password & Notes Manager
 
+Diagram:
+
+
+
+
 A self-hosted password and notes manager for your family. Data is stored in JSON files and encrypted with AES-256-GCM using a key derived from your keyword. Runs on Node.js so you can host it on a tablet via Termux and access it from your laptop over Tailscale.
 
 ## Features
@@ -94,6 +99,36 @@ password manager/
 └── README.md
 ```
 
+## Forgotten keyword
+
+**The keyword is never stored.** Only a one-way hash is saved for verification, and the vault is encrypted with a key derived from the keyword. So:
+
+- **There is no way to recover the old vault data** if someone forgets their keyword. The encrypted file cannot be decrypted without it.
+- **Recovery option (dev only):** You can reset that profile so they can use the app again with a **new** keyword. Their vault is wiped (empty); previous passwords and notes are not recoverable.
+
+See **Dev recovery** below for how to do the reset.
+
+## Dev recovery (reset profile after forgotten keyword)
+
+Only available when you set `DEV_RECOVERY_SECRET` in the environment. Do **not** set it in production if you want to disable this.
+
+1. Start the server with a secret:
+   ```bash
+   set DEV_RECOVERY_SECRET=your-secret-phrase
+   node server.js
+   ```
+2. Get the profile’s **userId** from `data/users.json` (the `id` field of the user).
+3. Call the reset endpoint (e.g. with curl or Postman):
+   ```bash
+   curl -X POST http://localhost:3000/api/dev/reset-profile ^
+     -H "Content-Type: application/json" ^
+     -d "{\"secret\": \"your-secret-phrase\", \"userId\": \"THE-UUID\", \"newKeyword\": \"NewSecure1!\"}"
+   ```
+   Use a **new keyword** that meets the app’s rules (length, upper, lower, number, symbol).
+4. That profile can now log in with the new keyword. Their vault is **empty**; old data cannot be recovered.
+
+**Security:** If you don’t set `DEV_RECOVERY_SECRET`, the `/api/dev/reset-profile` route is not registered at all.
+
 ## Security notes
 
 - **Keyword**: Choose a strong, unique keyword per profile. It is never stored; only a scrypt hash is saved for verification.
@@ -106,6 +141,7 @@ password manager/
 
 - `PORT` – Port to listen on (default `3000`).
 - `SESSION_SECRET` – Secret for signing session cookies (default: random at startup). Set a fixed value in production for stable sessions across restarts.
+- `DEV_RECOVERY_SECRET` – If set, enables the dev-only `POST /api/dev/reset-profile` endpoint to reset a profile’s keyword (vault is wiped). Leave unset in production to disable recovery.
 
 Example:
 
