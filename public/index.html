@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Family Vault</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="profile-screen">
+      <header class="profile-header">
+        <h1>Family Vault</h1>
+        <p>Choose a profile or add one</p>
+      </header>
+      <div id="profile-list" class="profile-grid"></div>
+      <button type="button" id="add-profile-btn" class="add-profile-btn" title="Add profile">+</button>
+    </div>
+
+    <div id="auth-screen" class="hidden">
+      <div class="auth-box">
+        <h2>Enter your keyword</h2>
+        <p class="auth-subtitle" id="auth-user-name"></p>
+        <form id="login-form">
+          <input type="password" id="login-keyword" placeholder="Keyword" autocomplete="off" required />
+          <button type="submit">Open vault</button>
+        </form>
+        <button type="button" id="auth-back" class="text-btn">← Back to profiles</button>
+      </div>
+    </div>
+
+    <div id="create-user-screen" class="hidden">
+      <div class="auth-box">
+        <h2>Create profile</h2>
+        <form id="create-user-form">
+          <input type="text" id="create-name" placeholder="Profile name" required />
+          <input type="password" id="create-keyword" placeholder="Keyword (min 4 characters)" minlength="4" autocomplete="off" required />
+          <p class="hint">This keyword unlocks your vault and encrypts your data. Remember it — we cannot recover it.</p>
+          <button type="submit">Create profile</button>
+        </form>
+        <button type="button" id="create-back" class="text-btn">← Back</button>
+      </div>
+    </div>
+
+    <div id="vault-screen" class="hidden">
+      <header class="vault-header">
+        <h1>Family Vault</h1>
+        <span id="vault-user-name" class="vault-user"></span>
+        <button type="button" id="logout-btn" class="logout-btn">Log out</button>
+      </header>
+      <nav class="vault-tabs">
+        <button type="button" data-tab="passwords" class="tab active">Passwords</button>
+        <button type="button" data-tab="notes" class="tab">Notes</button>
+      </nav>
+
+      <div id="passwords-panel" class="panel active">
+        <div class="panel-toolbar">
+          <input type="search" id="password-search" placeholder="Search by URL or extra info..." class="search" />
+          <button type="button" id="add-password-btn" class="primary-btn">+ Add password</button>
+        </div>
+        <div id="password-list" class="list"></div>
+      </div>
+
+      <div id="notes-panel" class="panel">
+        <div class="panel-toolbar">
+          <input type="search" id="note-search" placeholder="Search by title..." class="search" />
+          <button type="button" id="add-note-btn" class="primary-btn">+ Add note</button>
+        </div>
+        <div id="note-list" class="list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay hidden">
+    <div class="modal" id="password-modal">
+      <h3 id="password-modal-title">Add password</h3>
+      <form id="password-form">
+        <input type="hidden" id="password-id" />
+        <label>URL</label>
+        <input type="url" id="password-url" placeholder="https://..." />
+        <label>Username</label>
+        <input type="text" id="password-username" placeholder="Username" />
+        <label>Password</label>
+        <div class="password-row">
+          <input type="password" id="password-value" placeholder="Password" />
+          <button type="button" id="generate-password-btn" class="small-btn" title="Generate strong password">Generate</button>
+        </div>
+        <label>Email</label>
+        <input type="email" id="password-email" placeholder="Email" />
+        <label>Extra info</label>
+        <textarea id="password-extra" placeholder="Tags, notes, identifiers for search..." rows="2"></textarea>
+        <div class="modal-actions">
+          <button type="button" id="password-cancel" class="secondary-btn">Cancel</button>
+          <button type="submit" class="primary-btn">Save</button>
+        </div>
+      </form>
+    </div>
+    <div class="modal" id="note-modal">
+      <h3 id="note-modal-title">Add note</h3>
+      <form id="note-form">
+        <input type="hidden" id="note-id" />
+        <label>Title</label>
+        <input type="text" id="note-title" placeholder="Title" required />
+        <label>Description</label>
+        <textarea id="note-description" placeholder="Your note..." rows="6"></textarea>
+        <div class="modal-actions">
+          <button type="button" id="note-cancel" class="secondary-btn">Cancel</button>
+          <button type="submit" class="primary-btn">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
