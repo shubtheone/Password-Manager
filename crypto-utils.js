@@ -114,6 +114,62 @@ function getVaultPath(userId) {
   return path.join(VAULTS_DIR, `${safe}.json`);
 }
 
+function getRecoveryVaultPath(userId) {
+  const safe = userId.replace(/[^a-zA-Z0-9-_]/g, '');
+  return path.join(VAULTS_DIR, `${safe}.recovery.json`);
+}
+
+const RECOVERY_KEY_SALT_PREFIX = 'family-vault-recovery-key:';
+
+function deriveRecoveryStorageKey(mainKeyword, userId) {
+  const salt = RECOVERY_KEY_SALT_PREFIX + userId;
+  return crypto.scryptSync(mainKeyword, salt, 32, SCRYPT_OPTIONS);
+}
+
+function encryptRecoveryKeywordForStorage(recoveryKeyword, mainKeyword, userId) {
+  const key = deriveRecoveryStorageKey(mainKeyword, userId);
+  const iv = crypto.randomBytes(GCM_IV_LENGTH);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(recoveryKeyword, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return JSON.stringify({ iv: iv.toString('base64'), tag: tag.toString('base64'), data: enc.toString('base64') });
+}
+
+function decryptRecoveryKeywordFromStorage(encryptedBlob, mainKeyword, userId) {
+  const { iv, tag, data } = JSON.parse(encryptedBlob);
+  const key = deriveRecoveryStorageKey(mainKeyword, userId);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(tag, 'base64'));
+  return Buffer.concat([decipher.update(Buffer.from(data, 'base64')), decipher.final()]).toString('utf8');
+}
+
+function readRecoveryVaultEncrypted(userId) {
+  const p = getRecoveryVaultPath(userId);
+  if (!fs.existsSync(p)) return null;
+  return fs.readFileSync(p, 'utf8');
+}
+
+function writeRecoveryVaultEncrypted(userId, encrypted) {
+  ensureDataDir();
+  fs.writeFileSync(getRecoveryVaultPath(userId), encrypted);
+}
+
+function verifyRecoveryKeyword(keyword, saltB64, hashB64) {
+  return verifyKeyword(keyword, saltB64, hashB64);
+}
+
+function getVaultFromRecovery(userId, recoveryKeyword) {
+  const raw = readRecoveryVaultEncrypted(userId);
+  if (!raw || !raw.trim()) return { passwords: [], notes: [] };
+  const { plainText } = tryDecryptVaultData(raw, recoveryKeyword);
+  if (!plainText) return { passwords: [], notes: [] };
+  const vault = JSON.parse(plainText);
+  return {
+    passwords: Array.isArray(vault.passwords) ? vault.passwords : [],
+    notes: Array.isArray(vault.notes) ? vault.notes : [],
+  };
+}
+
 function readVaultEncrypted(userId) {
   const vaultPath = getVaultPath(userId);
   if (!fs.existsSync(vaultPath)) return null;
@@ -146,12 +202,15 @@ function getVault(userId, keyword) {
   }
 }
 
-function saveVault(userId, keyword, vault) {
+function saveVault(userId, keyword, vault, recoveryKeyword) {
   const json = JSON.stringify({
     passwords: vault.passwords || [],
     notes: vault.notes || [],
   });
   writeVaultEncrypted(userId, encryptVaultData(json, keyword));
+  if (recoveryKeyword && recoveryKeyword.length > 0) {
+    writeRecoveryVaultEncrypted(userId, encryptVaultData(json, recoveryKeyword));
+  }
 }
 
 function generateStrongPassword(length = 20) {
@@ -184,7 +243,7 @@ function decryptBackupToVault(raw, keyword) {
 
 /**
  * Dev recovery only: reset a user's keyword and wipe their vault.
- * Old vault data cannot be recovered. Use when someone forgets their keyword.
+ * Old vault data cannot be recovered. Use when someone forgets their keyword and has no recovery keyword.
  */
 function resetUserKeyword(userId, newKeyword) {
   const users = getUsers();
@@ -195,7 +254,36 @@ function resetUserKeyword(userId, newKeyword) {
   saveUsers(users);
   const vaultPath = getVaultPath(userId);
   if (fs.existsSync(vaultPath)) fs.unlinkSync(vaultPath);
+  const recoveryPath = getRecoveryVaultPath(userId);
+  if (fs.existsSync(recoveryPath)) fs.unlinkSync(recoveryPath);
   saveVault(userId, newKeyword, { passwords: [], notes: [] });
+}
+
+/**
+ * Recover access with recovery keyword: set new main keyword and keep all vault data.
+ * User must have set a recovery keyword at signup.
+ */
+function recoverKeyword(userId, recoveryKeyword, newMainKeyword) {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) throw new Error('User not found');
+  const user = users[idx];
+  if (!user.recovery_hash || !user.recovery_salt) throw new Error('This profile has no recovery keyword set');
+  if (!verifyRecoveryKeyword(recoveryKeyword, user.recovery_salt, user.recovery_hash)) {
+    throw new Error('Wrong recovery keyword');
+  }
+  const vault = getVaultFromRecovery(userId, recoveryKeyword);
+  const { salt, hash } = hashKeyword(newMainKeyword);
+  const recoveryKeyEncrypted = encryptRecoveryKeywordForStorage(recoveryKeyword, newMainKeyword, userId);
+  users[idx] = {
+    ...user,
+    salt,
+    hash,
+    recovery_key_encrypted: recoveryKeyEncrypted,
+  };
+  saveUsers(users);
+  saveVault(userId, newMainKeyword, vault);
+  writeRecoveryVaultEncrypted(userId, encryptVaultData(JSON.stringify({ passwords: vault.passwords || [], notes: vault.notes || [] }), recoveryKeyword));
 }
 
 module.exports = {
@@ -204,13 +292,21 @@ module.exports = {
   saveUsers,
   hashKeyword,
   verifyKeyword,
+  verifyRecoveryKeyword,
   getVault,
   saveVault,
   readVaultEncrypted,
   writeVaultEncrypted,
   getVaultPath,
+  getRecoveryVaultPath,
+  readRecoveryVaultEncrypted,
+  writeRecoveryVaultEncrypted,
+  encryptRecoveryKeywordForStorage,
+  decryptRecoveryKeywordFromStorage,
+  getVaultFromRecovery,
   generateStrongPassword,
   encryptVaultToBackup,
   decryptBackupToVault,
   resetUserKeyword,
+  recoverKeyword,
 };

@@ -1,6 +1,8 @@
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env') });
+
 const express = require('express');
 const session = require('express-session');
-const path = require('path');
 const crypto = require('crypto');
 const {
   ensureDataDir,
@@ -14,6 +16,10 @@ const {
   encryptVaultToBackup,
   decryptBackupToVault,
   resetUserKeyword,
+  recoverKeyword,
+  encryptRecoveryKeywordForStorage,
+  decryptRecoveryKeywordFromStorage,
+  getVaultFromRecovery,
 } = require('./crypto-utils');
 
 const KEYWORD_MIN_LENGTH = 8;
@@ -106,12 +112,12 @@ function clearFailedLogins(req, userId) {
 }
 
 app.get('/api/users', (req, res) => {
-  const users = getUsers().map((u) => ({ id: u.id, name: u.name }));
+  const users = getUsers().map((u) => ({ id: u.id, name: u.name, hasRecovery: !!(u.recovery_salt && u.recovery_hash) }));
   res.json({ users });
 });
 
 app.post('/api/users', (req, res) => {
-  const { name, keyword } = req.body;
+  const { name, keyword, recoveryKeyword } = req.body || {};
   if (!name || typeof name !== 'string' || !keyword || typeof keyword !== 'string') {
     return res.status(400).json({ error: 'Name and keyword are required' });
   }
@@ -120,6 +126,13 @@ app.post('/api/users', (req, res) => {
   const kwValidation = validateKeywordStrong(keyword);
   if (!kwValidation.valid) return res.status(400).json({ error: kwValidation.error });
 
+  const hasRecovery = recoveryKeyword != null && String(recoveryKeyword).trim().length > 0;
+  if (hasRecovery) {
+    const rKw = String(recoveryKeyword).trim();
+    const rValidation = validateKeywordStrong(rKw);
+    if (!rValidation.valid) return res.status(400).json({ error: `Recovery keyword: ${rValidation.error}` });
+  }
+
   const users = getUsers();
   if (users.some((u) => u.name.toLowerCase() === trimmedName.toLowerCase())) {
     return res.status(409).json({ error: 'A profile with this name already exists' });
@@ -127,13 +140,21 @@ app.post('/api/users', (req, res) => {
 
   const id = crypto.randomUUID();
   const { salt, hash } = hashKeyword(keyword);
-  users.push({ id, name: trimmedName, salt, hash });
+  const userRecord = { id, name: trimmedName, salt, hash };
+  if (hasRecovery) {
+    const rKw = String(recoveryKeyword).trim();
+    const { salt: rSalt, hash: rHash } = hashKeyword(rKw);
+    userRecord.recovery_salt = rSalt;
+    userRecord.recovery_hash = rHash;
+    userRecord.recovery_key_encrypted = encryptRecoveryKeywordForStorage(rKw, keyword, id);
+  }
+  users.push(userRecord);
   saveUsers(users);
 
   const vault = { passwords: [], notes: [] };
-  saveVault(id, keyword, vault);
+  saveVault(id, keyword, vault, hasRecovery ? String(recoveryKeyword).trim() : undefined);
 
-  res.status(201).json({ user: { id, name: trimmedName } });
+  res.status(201).json({ user: { id, name: trimmedName, hasRecovery } });
 });
 
 app.post('/api/auth/login', (req, res) => {
@@ -158,7 +179,29 @@ app.post('/api/auth/login', (req, res) => {
   req.session.userId = userId;
   req.session.userName = user.name;
   req.session.keyword = keyword;
-  res.json({ success: true, userName: user.name });
+  let recoveryKeyword = null;
+  if (user.recovery_key_encrypted) {
+    try {
+      recoveryKeyword = decryptRecoveryKeywordFromStorage(user.recovery_key_encrypted, keyword, userId);
+    } catch (_) {}
+  }
+  req.session.recoveryKeyword = recoveryKeyword || undefined;
+  res.json({ success: true, userName: user.name, hasRecovery: !!user.recovery_salt });
+});
+
+app.post('/api/auth/recover-keyword', (req, res) => {
+  const { userId, recoveryKeyword, newKeyword } = req.body || {};
+  if (!userId || !recoveryKeyword || !newKeyword) {
+    return res.status(400).json({ error: 'userId, recoveryKeyword, and newKeyword are required' });
+  }
+  const kwValidation = validateKeywordStrong(newKeyword);
+  if (!kwValidation.valid) return res.status(400).json({ error: kwValidation.error });
+  try {
+    recoverKeyword(userId, recoveryKeyword, newKeyword);
+    res.json({ success: true, message: 'Keyword updated. You can now log in with your new keyword. All passwords and notes are kept.' });
+  } catch (e) {
+    return res.status(400).json({ error: e.message || 'Recovery failed' });
+  }
 });
 
 app.post('/api/auth/logout', (req, res) => {
@@ -194,7 +237,7 @@ app.post('/api/vault/passwords', requireAuth, (req, res) => {
   };
   let vault = getVault(req.session.userId, req.session.keyword);
   vault.passwords.push(entry);
-  saveVault(req.session.userId, req.session.keyword, vault);
+  saveVault(req.session.userId, req.session.keyword, vault, req.session.recoveryKeyword);
   res.status(201).json(entry);
 });
 
@@ -212,7 +255,7 @@ app.put('/api/vault/passwords/:id', requireAuth, (req, res) => {
     email: String(email ?? vault.passwords[idx].email).trim(),
     extraInfo: String(extraInfo ?? vault.passwords[idx].extraInfo).trim(),
   };
-  saveVault(req.session.userId, req.session.keyword, vault);
+  saveVault(req.session.userId, req.session.keyword, vault, req.session.recoveryKeyword);
   res.json(vault.passwords[idx]);
 });
 
@@ -222,7 +265,7 @@ app.delete('/api/vault/passwords/:id', requireAuth, (req, res) => {
   const before = vault.passwords.length;
   vault.passwords = vault.passwords.filter((p) => p.id !== id);
   if (vault.passwords.length === before) return res.status(404).json({ error: 'Password entry not found' });
-  saveVault(req.session.userId, req.session.keyword, vault);
+  saveVault(req.session.userId, req.session.keyword, vault, req.session.recoveryKeyword);
   res.json({ success: true });
 });
 
@@ -235,7 +278,7 @@ app.post('/api/vault/notes', requireAuth, (req, res) => {
   };
   let vault = getVault(req.session.userId, req.session.keyword);
   vault.notes.push(entry);
-  saveVault(req.session.userId, req.session.keyword, vault);
+  saveVault(req.session.userId, req.session.keyword, vault, req.session.recoveryKeyword);
   res.status(201).json(entry);
 });
 
@@ -250,7 +293,7 @@ app.put('/api/vault/notes/:id', requireAuth, (req, res) => {
     title: String(title ?? vault.notes[idx].title).trim(),
     description: String(description ?? vault.notes[idx].description),
   };
-  saveVault(req.session.userId, req.session.keyword, vault);
+  saveVault(req.session.userId, req.session.keyword, vault, req.session.recoveryKeyword);
   res.json(vault.notes[idx]);
 });
 
@@ -260,7 +303,7 @@ app.delete('/api/vault/notes/:id', requireAuth, (req, res) => {
   const before = vault.notes.length;
   vault.notes = vault.notes.filter((n) => n.id !== id);
   if (vault.notes.length === before) return res.status(404).json({ error: 'Note not found' });
-  saveVault(req.session.userId, req.session.keyword, vault);
+  saveVault(req.session.userId, req.session.keyword, vault, req.session.recoveryKeyword);
   res.json({ success: true });
 });
 
@@ -313,7 +356,7 @@ app.post('/api/vault/import', requireAuth, (req, res) => {
         notes: [...vault.notes, ...newNotes],
       };
     }
-    saveVault(req.session.userId, req.session.keyword, vault);
+    saveVault(req.session.userId, req.session.keyword, vault, req.session.recoveryKeyword);
     res.json({ success: true, vault: { passwords: vault.passwords.length, notes: vault.notes.length } });
   } catch (e) {
     res.status(400).json({ error: 'Invalid or corrupted backup file, or wrong keyword' });
@@ -382,15 +425,16 @@ app.post('/api/vault/import-csv', requireAuth, (req, res) => {
     });
     added++;
   }
-  saveVault(req.session.userId, req.session.keyword, vault);
+  saveVault(req.session.userId, req.session.keyword, vault, req.session.recoveryKeyword);
   res.json({ success: true, imported: added });
 });
 
 /* Dev-only: reset a profile's keyword (wipes vault; old data is unrecoverable). Only available when DEV_RECOVERY_SECRET is set. */
-if (process.env.DEV_RECOVERY_SECRET) {
+const devRecoverySecret = process.env.DEV_RECOVERY_SECRET && String(process.env.DEV_RECOVERY_SECRET).trim();
+if (devRecoverySecret) {
   app.post('/api/dev/reset-profile', (req, res) => {
     const { secret, userId, newKeyword } = req.body || {};
-    if (secret !== process.env.DEV_RECOVERY_SECRET) {
+    if (secret !== devRecoverySecret) {
       return res.status(403).json({ error: 'Invalid secret' });
     }
     if (!userId || !newKeyword) {
@@ -416,4 +460,5 @@ app.get('*', (req, res) => {
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Family Vault running at http://0.0.0.0:${PORT}`);
   console.log(`On Tailscale/LAN use your device IP and port ${PORT}`);
+  if (devRecoverySecret) console.log('Dev recovery: POST /api/dev/reset-profile is enabled');
 });

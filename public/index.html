@@ -32,6 +32,14 @@
           </div>
           <button type="submit">Open vault</button>
         </form>
+        <button type="button" id="forgot-keyword-btn" class="text-btn hidden">Forgot keyword? Use recovery</button>
+        <div id="recover-keyword-form" class="hidden" style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+          <h3 style="font-size: 1rem; margin: 0 0 0.5rem;">Set new keyword (keeps all passwords & notes)</h3>
+          <input type="password" id="recover-recovery-keyword" placeholder="Recovery keyword" autocomplete="off" />
+          <input type="password" id="recover-new-keyword" placeholder="New keyword" autocomplete="off" />
+          <button type="button" id="recover-submit-btn" class="primary-btn" style="margin-top: 0.5rem;">Set new keyword</button>
+          <button type="button" id="recover-cancel-btn" class="text-btn">Cancel</button>
+        </div>
         <button type="button" id="auth-back" class="text-btn">← Back to profiles</button>
       </div>
     </div>
@@ -50,6 +58,9 @@
             <li id="kw-sym">One symbol (!@#$%^&*…)</li>
           </ul>
           <p class="hint">This keyword unlocks your vault and encrypts your data. Remember it — we cannot recover it.</p>
+          <label style="margin-top: 0.75rem;">Recovery keyword (optional)</label>
+          <input type="password" id="create-recovery-keyword" placeholder="Same rules — use if you forget main keyword" autocomplete="off" />
+          <p class="hint">If you set this, you can reset your main keyword without losing any data.</p>
           <button type="submit" id="create-submit-btn">Create profile</button>
         </form>
         <button type="button" id="create-back" class="text-btn">← Back</button>

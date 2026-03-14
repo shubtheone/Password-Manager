@@ -60,14 +60,19 @@ function renderProfiles() {
   list.innerHTML = state.users
     .map(
       (u) =>
-        `<button type="button" class="profile-card" data-user-id="${u.id}" data-user-name="${escapeAttr(u.name)}">${escapeHtml(u.name)}</button>`
+        `<button type="button" class="profile-card" data-user-id="${u.id}" data-user-name="${escapeAttr(u.name)}" data-has-recovery="${u.hasRecovery ? '1' : '0'}">${escapeHtml(u.name)}</button>`
     )
     .join('');
   list.querySelectorAll('.profile-card').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.selectedUserId = btn.dataset.userId;
+      state.selectedUserHasRecovery = btn.dataset.hasRecovery === '1';
       $('auth-user-name').textContent = btn.dataset.userName || '';
       $('login-keyword').value = '';
+      const forgotBtn = $('forgot-keyword-btn');
+      if (forgotBtn) forgotBtn.classList.toggle('hidden', !state.selectedUserHasRecovery);
+      $('recover-keyword-form').classList.add('hidden');
+      $('login-form').classList.remove('hidden');
       showScreen('auth');
       setTimeout(() => $('login-keyword').focus(), 100);
     });
@@ -98,6 +103,7 @@ async function loadUsers() {
 $('add-profile-btn')?.addEventListener('click', () => {
   $('create-name').value = '';
   $('create-keyword').value = '';
+  if ($('create-recovery-keyword')) $('create-recovery-keyword').value = '';
   updateKeywordRequirements('');
   showScreen('createUser');
   setTimeout(() => $('create-name').focus(), 100);
@@ -138,13 +144,18 @@ $('create-user-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = $('create-name').value.trim();
   const keyword = $('create-keyword').value;
+  const recoveryKeyword = $('create-recovery-keyword')?.value?.trim() || undefined;
   if (!name || !keyword) return;
   if (!validateKeywordClient(keyword).all) {
     toast('Keyword does not meet all requirements');
     return;
   }
+  if (recoveryKeyword && !validateKeywordClient(recoveryKeyword).all) {
+    toast('Recovery keyword must meet the same requirements');
+    return;
+  }
   try {
-    await api('/api/users', { method: 'POST', body: { name, keyword } });
+    await api('/api/users', { method: 'POST', body: { name, keyword, recoveryKeyword } });
     await loadUsers();
     showScreen('profile');
   } catch (err) {
@@ -155,6 +166,43 @@ $('create-user-form')?.addEventListener('submit', async (e) => {
 $('auth-back')?.addEventListener('click', () => {
   state.selectedUserId = null;
   showScreen('profile');
+});
+
+$('forgot-keyword-btn')?.addEventListener('click', () => {
+  $('login-form').classList.add('hidden');
+  $('recover-keyword-form').classList.remove('hidden');
+  $('recover-recovery-keyword').value = '';
+  $('recover-new-keyword').value = '';
+});
+
+$('recover-cancel-btn')?.addEventListener('click', () => {
+  $('recover-keyword-form').classList.add('hidden');
+  $('login-form').classList.remove('hidden');
+});
+
+$('recover-submit-btn')?.addEventListener('click', async () => {
+  const recoveryKeyword = $('recover-recovery-keyword').value;
+  const newKeyword = $('recover-new-keyword').value;
+  if (!recoveryKeyword || !newKeyword) {
+    toast('Enter both recovery keyword and new keyword');
+    return;
+  }
+  if (!validateKeywordClient(newKeyword).all) {
+    toast('New keyword must meet the same requirements (8+ chars, upper, lower, number, symbol)');
+    return;
+  }
+  try {
+    await api('/api/auth/recover-keyword', {
+      method: 'POST',
+      body: { userId: state.selectedUserId, recoveryKeyword, newKeyword },
+    });
+    toast('Keyword updated. You can now log in with your new keyword.', true);
+    $('recover-keyword-form').classList.add('hidden');
+    $('login-form').classList.remove('hidden');
+    $('login-keyword').value = newKeyword;
+  } catch (err) {
+    toast(err.message);
+  }
 });
 
 $('login-form')?.addEventListener('submit', async (e) => {

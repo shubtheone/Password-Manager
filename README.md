@@ -104,9 +104,10 @@ You can also use a Tailscale hostname if you’ve enabled MagicDNS (e.g. `http:/
 ```
 password manager/
 ├── server.js           # Express server and API
-├── crypto-utils.js    # User hash, AES-GCM encrypt/decrypt, vault read/write
+├── crypto-utils.js     # User hash, AES-GCM encrypt/decrypt, vault read/write
+├── .env.example        # Example env vars (copy to .env and edit)
 ├── data/
-│   ├── users.json      # Profile list + keyword hashes (no plain keywords)
+│   ├── users.json     # Profile list + keyword hashes (no plain keywords)
 │   └── vaults/
 │       └── <userId>.json   # AES-GCM encrypted vault (passwords + notes)
 ├── public/
@@ -119,33 +120,47 @@ password manager/
 
 ## Forgotten keyword
 
-**The keyword is never stored.** Only a one-way hash is saved for verification, and the vault is encrypted with a key derived from the keyword. So:
+**The main keyword is never stored.** Only a one-way hash is saved for verification, and the vault is encrypted with a key derived from the keyword.
 
-- **There is no way to recover the old vault data** if someone forgets their keyword. The encrypted file cannot be decrypted without it.
-- **Recovery option (dev only):** You can reset that profile so they can use the app again with a **new** keyword. Their vault is wiped (empty); previous passwords and notes are not recoverable.
-
-See **Dev recovery** below for how to do the reset.
+- **If they set a recovery keyword at signup:** They can use **Forgot keyword?** on the login screen: enter the recovery keyword and a new main keyword. **All passwords and notes are kept.** No data is wiped.
+- **If they never set a recovery keyword:** You can use **Dev recovery** (see below) to reset the profile so they can log in again with a new keyword. **That reset wipes the vault** (empty); old data cannot be recovered. So encourage family members to set an optional recovery keyword when creating their profile.
 
 ## Dev recovery (reset profile after forgotten keyword)
 
-Only available when you set `DEV_RECOVERY_SECRET` in the environment. Do **not** set it in production if you want to disable this.
+Optional. Only available when you set `DEV_RECOVERY_SECRET`. If you don’t set it, the reset endpoint is not registered.
 
-1. Start the server with a secret:
+**Using a `.env` file (recommended):**
+
+1. Copy the example env file and add your recovery secret:
    ```bash
-   set DEV_RECOVERY_SECRET=your-secret-phrase
-   node server.js
+   cp .env.example .env
    ```
+   Edit `.env` and set (uncomment and change the value):
+   ```
+   DEV_RECOVERY_SECRET=your-recovery-secret-phrase
+   ```
+   The server loads `.env` on startup (via `dotenv`). Do **not** commit `.env`; it is in `.gitignore`.
+
 2. Get the profile’s **userId** from `data/users.json` (the `id` field of the user).
-3. Call the reset endpoint (e.g. with curl or Postman):
-   ```bash
-   curl -X POST http://localhost:3000/api/dev/reset-profile ^
-     -H "Content-Type: application/json" ^
-     -d "{\"secret\": \"your-secret-phrase\", \"userId\": \"THE-UUID\", \"newKeyword\": \"NewSecure1!\"}"
+
+3. Call the reset endpoint. Use a **new keyword** that meets the app’s rules (length, upper, lower, number, symbol).
+
+   **PowerShell (Windows):**
+   ```powershell
+   Invoke-RestMethod -Method POST -Uri "http://localhost:3000/api/dev/reset-profile" -ContentType "application/json" -Body '{"secret":"your-recovery-secret-phrase","userId":"THE-UUID","newKeyword":"NewSecure1!"}'
    ```
-   Use a **new keyword** that meets the app’s rules (length, upper, lower, number, symbol).
+   Replace `your-recovery-secret-phrase`, `THE-UUID`, and `NewSecure1!` with your `.env` secret, the user’s id from `users.json`, and the new keyword.
+
+   **curl (Git Bash / WSL / Linux / macOS):**
+   ```bash
+   curl -X POST http://localhost:3000/api/dev/reset-profile \
+     -H "Content-Type: application/json" \
+     -d "{\"secret\": \"your-recovery-secret-phrase\", \"userId\": \"THE-UUID\", \"newKeyword\": \"NewSecure1!\"}"
+   ```
+
 4. That profile can now log in with the new keyword. Their vault is **empty**; old data cannot be recovered.
 
-**Security:** If you don’t set `DEV_RECOVERY_SECRET`, the `/api/dev/reset-profile` route is not registered at all.
+**Without `.env`:** You can still set the variable in the shell before starting the server (e.g. `set DEV_RECOVERY_SECRET=...` on Windows, `export DEV_RECOVERY_SECRET=...` on Linux/macOS).
 
 ## Security notes
 
@@ -155,17 +170,15 @@ Only available when you set `DEV_RECOVERY_SECRET` in the environment. Do **not**
 - **Session**: The keyword is kept in server memory only for the duration of the session and is used to encrypt/decrypt on the server. Log out when leaving the device.
 - **Brute-force protection**: Login attempts are rate limited per IP/profile with temporary lockout after repeated failures.
 
-## Optional: environment variables
+## Configuration (.env)
 
-- `PORT` – Port to listen on (default `3000`).
-- `SESSION_SECRET` – Secret for signing session cookies (default: random at startup). Set a fixed value in production for stable sessions across restarts.
-- `DEV_RECOVERY_SECRET` – If set, enables the dev-only `POST /api/dev/reset-profile` endpoint to reset a profile’s keyword (vault is wiped). Leave unset in production to disable recovery.
+Optional. Create a `.env` file in the project root (copy from `.env.example`) to set:
 
-Example:
+- **PORT** – Port to listen on (default `3000`).
+- **SESSION_SECRET** – Secret for signing session cookies (default: random at startup). Set a fixed value for stable sessions across restarts.
+- **DEV_RECOVERY_SECRET** – *(Optional.)* If set, enables the dev-only `POST /api/dev/reset-profile` endpoint to reset a profile’s keyword (vault is wiped). **Leave unset or omit to disable recovery**; the route will not be registered.
 
-```bash
-PORT=3000 SESSION_SECRET=your-secret-here node server.js
-```
+The server loads `.env` automatically on start. Do not commit `.env` (it is listed in `.gitignore`). See **Dev recovery** above for how to use `DEV_RECOVERY_SECRET`.
 
 ---
 
