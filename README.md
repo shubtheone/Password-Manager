@@ -16,6 +16,23 @@ A self-hosted password and notes manager for your family. Data is stored in JSON
 - **Notes** – Title and description. Search by title.
 - **JSON storage** – All vault data is in `data/vaults/<userId>.json`, encrypted so that without the keyword the files are unreadable.
 
+## Import passwords from Brave (or Chrome)
+
+You can export saved passwords from Brave (or Chrome) as a CSV file and import them into Family Vault.
+
+1. **Export from Brave**
+   - Open Brave → **Settings** (or `brave://settings/passwords`).
+   - Go to **Passwords** (under “Autofill” or “Additional settings”).
+   - Click the **⋮** menu next to “Saved passwords” → **Export passwords**.
+   - Confirm with your device login if asked, then save the CSV file.
+
+2. **Import into Family Vault**
+   - Log in to your profile in Family Vault.
+   - Open **Settings** (gear icon) → under **Import from browser**, click **Import from CSV (Brave/Chrome)**.
+   - Choose the CSV file you exported. All rows (url, username, password, and optional name) are added to your Passwords list.
+
+**Security:** The CSV file is plain text. After importing, delete the CSV from your device and don’t share it.
+
 ## How it works
 
 1. **Create a profile** – Name + keyword (min 4 characters). The keyword is hashed with scrypt and never stored in plain text.

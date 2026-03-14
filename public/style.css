@@ -561,6 +561,17 @@ body {
   color: var(--text-muted);
 }
 
+.list-item .password-row-inline {
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.list-item .password-display {
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.05em;
+}
+
 .list-item .actions {
   display: flex;
   gap: 0.5rem;

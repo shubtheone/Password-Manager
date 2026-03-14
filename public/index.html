@@ -92,6 +92,10 @@
             <button type="button" id="import-backup-btn" class="block-btn secondary">Import backup</button>
           </div>
           <p id="import-mode-hint" class="hint hidden">Choose: <button type="button" id="import-mode-replace" class="link-btn">Replace all</button> or <button type="button" id="import-mode-merge" class="link-btn">Merge</button></p>
+          <h4 style="margin-top: 1rem;">Import from browser</h4>
+          <p class="hint" style="margin-bottom: 0.5rem;">Export passwords from Brave (or Chrome) as CSV, then upload here.</p>
+          <input type="file" id="import-csv-file" accept=".csv,text/csv" class="hidden" />
+          <button type="button" id="import-csv-btn" class="block-btn secondary">Import from CSV (Brave/Chrome)</button>
         </div>
       </div>
       <div id="lock-overlay" class="lock-overlay hidden">

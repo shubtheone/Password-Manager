@@ -320,6 +320,72 @@ app.post('/api/vault/import', requireAuth, (req, res) => {
   }
 });
 
+/** Parse CSV line respecting quoted fields (e.g. "a,b",c) */
+function parseCSVLine(line) {
+  const out = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if ((c === ',' && !inQuotes) || (c === '\r' && !inQuotes)) {
+      out.push(cur.trim());
+      cur = '';
+    } else if (c !== '\r') {
+      cur += c;
+    }
+  }
+  out.push(cur.trim());
+  return out;
+}
+
+/** Import passwords from Brave/Chrome CSV export. Expects header: name,url,username,password or url,username,password */
+app.post('/api/vault/import-csv', requireAuth, (req, res) => {
+  const { csv } = req.body || {};
+  if (!csv || typeof csv !== 'string') {
+    return res.status(400).json({ error: 'CSV content is required' });
+  }
+  const lines = csv.split(/\n/).filter((l) => l.trim());
+  if (lines.length < 2) {
+    return res.status(400).json({ error: 'CSV must have a header row and at least one data row' });
+  }
+  const header = parseCSVLine(lines[0]).map((h) => h.toLowerCase().replace(/\s/g, '_'));
+  const urlIdx = header.findIndex((h) => h === 'url' || h === 'login_uri' || h === 'origin' || h === 'website');
+  const userIdx = header.findIndex((h) => h === 'username' || h === 'login' || h === 'user');
+  const passIdx = header.findIndex((h) => h === 'password');
+  const nameIdx = header.findIndex((h) => h === 'name' || h === 'title');
+  if (passIdx === -1) {
+    return res.status(400).json({ error: 'CSV must have a "password" column (Brave/Chrome export has name,url,username,password)' });
+  }
+  let vault = getVault(req.session.userId, req.session.keyword);
+  let added = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const cells = parseCSVLine(lines[i]);
+    if (cells.length < header.length) continue;
+    const url = (urlIdx >= 0 ? cells[urlIdx] : '') || '';
+    const username = (userIdx >= 0 ? cells[userIdx] : '') || '';
+    const password = (passIdx >= 0 ? cells[passIdx] : '') || '';
+    const extraInfo = (nameIdx >= 0 ? cells[nameIdx] : '') || '';
+    vault.passwords.push({
+      id: crypto.randomUUID(),
+      url: String(url).trim(),
+      username: String(username).trim(),
+      password: String(password),
+      email: '',
+      extraInfo: String(extraInfo).trim(),
+    });
+    added++;
+  }
+  saveVault(req.session.userId, req.session.keyword, vault);
+  res.json({ success: true, imported: added });
+});
+
 /* Dev-only: reset a profile's keyword (wipes vault; old data is unrecoverable). Only available when DEV_RECOVERY_SECRET is set. */
 if (process.env.DEV_RECOVERY_SECRET) {
   app.post('/api/dev/reset-profile', (req, res) => {

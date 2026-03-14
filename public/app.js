@@ -361,14 +361,38 @@ function renderPasswords() {
         <div class="title-row">${p.url ? escapeHtml(p.url) : '(No URL)'}</div>
         <div class="meta">${escapeHtml(p.username || '')} ${p.email ? '· ' + escapeHtml(p.email) : ''}</div>
         ${p.extraInfo ? `<div class="meta">${escapeHtml(p.extraInfo)}</div>` : ''}
+        <div class="password-row-inline"><span class="password-display" data-visible="0">••••••••</span></div>
       </div>
       <div class="actions">
+        <button type="button" class="small-btn eye-password-btn" title="Show password">👁</button>
         <button type="button" class="small-btn edit-password">Edit</button>
         <button type="button" class="small-btn danger delete-password">Delete</button>
       </div>
     </div>`
     )
     .join('');
+  list.querySelectorAll('.eye-password-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const item = btn.closest('.list-item');
+      if (!item) return;
+      const id = item.dataset.id;
+      const p = state.vault.passwords.find((x) => x.id === id);
+      const span = item.querySelector('.password-display');
+      if (!p || !span) return;
+      const visible = span.dataset.visible === '1';
+      if (visible) {
+        span.textContent = '••••••••';
+        span.dataset.visible = '0';
+        btn.textContent = '👁';
+        btn.title = 'Show password';
+      } else {
+        span.textContent = p.password || '(none)';
+        span.dataset.visible = '1';
+        btn.textContent = '🙈';
+        btn.title = 'Hide password';
+      }
+    });
+  });
   list.querySelectorAll('.edit-password').forEach((btn) => {
     btn.addEventListener('click', () => {
       const item = btn.closest('.list-item');
@@ -548,6 +572,27 @@ function doImport(mode) {
 
 $('import-mode-replace')?.addEventListener('click', () => doImport('replace'));
 $('import-mode-merge')?.addEventListener('click', () => doImport('merge'));
+
+$('import-csv-btn')?.addEventListener('click', () => $('import-csv-file').click());
+
+$('import-csv-file')?.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+  e.target.value = '';
+  const reader = new FileReader();
+  reader.onload = async () => {
+    const csv = typeof reader.result === 'string' ? reader.result : '';
+    try {
+      const data = await api('/api/vault/import-csv', { method: 'POST', body: { csv } });
+      await loadVault();
+      renderPasswords();
+      toast(data.imported ? `Imported ${data.imported} password(s)` : 'No rows imported', true);
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  reader.readAsText(file, 'UTF-8');
+});
 
 $('password-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
