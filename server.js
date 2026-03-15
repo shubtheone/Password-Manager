@@ -620,6 +620,7 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Family Vault running at http://0.0.0.0:${PORT}`);
-  console.log(`On Tailscale/LAN use your device IP and port ${PORT}`);
+  console.log(`Same WiFi: use http://<this-device-IP>:${PORT} from other devices (no Tailscale needed)`);
+  console.log(`Tailscale: use http://<tailscale-IP>:${PORT}`);
   if (devRecoverySecret) console.log('Dev recovery: POST /api/dev/reset-profile is enabled');
 });

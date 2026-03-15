@@ -6,7 +6,7 @@
 
 ---
 
-A self-hosted password and notes manager for your family. Data is stored in JSON files and encrypted with AES-256-GCM using a key derived from your keyword. Runs on Node.js so you can host it on a tablet via Termux and access it from your laptop over Tailscale.
+A self-hosted password and notes manager for your family. Data is stored in JSON files and encrypted with AES-256-GCM using a key derived from your keyword. Runs on Node.js so you can host it on a tablet (e.g. via Termux) and access it from other devices on the same WiFi, or over Tailscale for remote access.
 
 ## Features
 
@@ -79,7 +79,22 @@ Open http://localhost:3000
   ```
   The app listens on `0.0.0.0`, so it’s reachable from other devices on the same network (and over Tailscale).
 
-### 2. Tailscale (tablet + laptop)
+### 2. Access over WiFi (no Tailscale)
+
+Anyone on the **same WiFi** as the tablet can use Family Vault without Tailscale:
+
+1. **On the tablet:** After starting the server, find its local IP address:
+   - In Termux: run `ip addr` or `ifconfig` and look for the WiFi interface (often `wlan0`). The IP is something like `192.168.1.105` or `192.168.0.42`.
+   - Or in Android: **Settings → Network & internet → (your WiFi) → Details** and note the IP address.
+2. **On any device connected to the same WiFi** (phone, laptop, another tablet): Open a browser and go to:
+   ```
+   http://<tablet-ip>:3000
+   ```
+   Example: `http://192.168.1.105:3000`
+
+No Tailscale or internet required—only the local WiFi. Restrict who can join your WiFi if you want to limit who can reach the server.
+
+### 3. Tailscale (tablet + laptop, for remote access)
 
 - On both tablet and laptop: install [Tailscale](https://tailscale.com/download) and sign in to the same Tailscale account.
 - On the tablet: note its Tailscale IP (e.g. `100.x.x.x`) in the Tailscale app or in Termux with `ifconfig` / `ip addr`.
@@ -87,7 +102,7 @@ Open http://localhost:3000
 
 You can also use a Tailscale hostname if you’ve enabled MagicDNS (e.g. `http://tablet-name:3000`).
 
-### 3. Run in background on Termux
+### 4. Run in background on Termux
 
 - To keep the server running after closing Termux, use something like `nohup` or a simple loop:
   ```bash
