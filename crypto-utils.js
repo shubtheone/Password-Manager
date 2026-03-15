@@ -21,8 +21,18 @@ function ensureDataDir() {
 
 function getUsers() {
   ensureDataDir();
-  const data = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
-  return data.users || [];
+  const raw = fs.readFileSync(USERS_FILE, 'utf8').trim();
+  if (!raw) {
+    saveUsers([]);
+    return [];
+  }
+  try {
+    const data = JSON.parse(raw);
+    return data.users || [];
+  } catch (e) {
+    saveUsers([]);
+    return [];
+  }
 }
 
 function saveUsers(users) {

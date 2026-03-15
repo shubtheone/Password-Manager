@@ -19,6 +19,31 @@
       </header>
       <div id="profile-list" class="profile-grid"></div>
       <button type="button" id="add-profile-btn" class="add-profile-btn" title="Add profile">+</button>
+      <button type="button" id="export-all-btn" class="restore-backup-btn">Export all profiles</button>
+      <button type="button" id="restore-backup-btn" class="restore-backup-btn">Restore from backup</button>
+      <div id="restore-backup-panel" class="restore-panel hidden">
+        <h3>Restore on this device</h3>
+        <p class="hint">One profile: use the .enc file from Settings → Export. If a profile with this name already exists, enter the same keyword to replace its data.</p>
+        <input type="text" id="restore-name" placeholder="Profile name" />
+        <div class="input-eye-row">
+          <input type="password" id="restore-keyword" placeholder="Keyword (same as when you exported)" autocomplete="off" />
+          <button type="button" class="eye-btn" data-target="restore-keyword" title="Show/hide">👁</button>
+        </div>
+        <input type="file" id="restore-file" accept=".enc,application/octet-stream" class="hidden" />
+        <button type="button" id="restore-file-btn" class="block-btn secondary">Choose backup file (.enc)</button>
+        <span id="restore-file-name" class="hint"></span>
+        <div style="margin-top: 0.75rem;">
+          <button type="button" id="restore-submit-btn" class="primary-btn">Restore</button>
+          <button type="button" id="restore-cancel-btn" class="text-btn">Cancel</button>
+        </div>
+        <hr style="margin: 1.25rem 0; border-color: var(--border);" />
+        <h3 style="font-size: 1rem;">Restore all profiles</h3>
+        <p class="hint">Use the file from "Export all profiles". Enter each profile's keyword.</p>
+        <input type="file" id="restore-all-file" accept=".json,application/json" class="hidden" />
+        <button type="button" id="restore-all-file-btn" class="block-btn secondary">Choose export-all file (.json)</button>
+        <div id="restore-all-keywords"></div>
+        <button type="button" id="restore-all-submit-btn" class="primary-btn hidden" style="margin-top: 0.75rem;">Restore all</button>
+      </div>
     </div>
 
     <div id="auth-screen" class="hidden">

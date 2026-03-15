@@ -20,6 +20,8 @@ const {
   encryptRecoveryKeywordForStorage,
   decryptRecoveryKeywordFromStorage,
   getVaultFromRecovery,
+  readVaultEncrypted,
+  writeVaultEncrypted,
 } = require('./crypto-utils');
 
 const KEYWORD_MIN_LENGTH = 8;
@@ -114,6 +116,118 @@ function clearFailedLogins(req, userId) {
 app.get('/api/users', (req, res) => {
   const users = getUsers().map((u) => ({ id: u.id, name: u.name, hasRecovery: !!(u.recovery_salt && u.recovery_hash) }));
   res.json({ users });
+});
+
+/* Restore from backup on login page (new device / no login required). Creates a new profile from the backup. */
+app.post('/api/import-backup', (req, res) => {
+  const { name, keyword, data: dataBase64 } = req.body || {};
+  if (!name || typeof name !== 'string' || !keyword || typeof keyword !== 'string') {
+    return res.status(400).json({ error: 'Profile name and keyword are required' });
+  }
+  if (!dataBase64 || typeof dataBase64 !== 'string') {
+    return res.status(400).json({ error: 'Backup file is required' });
+  }
+  const trimmedName = name.trim();
+  if (!trimmedName) return res.status(400).json({ error: 'Profile name cannot be empty' });
+  const kwValidation = validateKeywordStrong(keyword);
+  if (!kwValidation.valid) return res.status(400).json({ error: kwValidation.error });
+
+  let raw;
+  try {
+    const base64Clean = String(dataBase64).replace(/\s/g, '');
+    raw = Buffer.from(base64Clean, 'base64').toString('utf8');
+    raw = raw.replace(/^\uFEFF/, '');
+  } catch (e) {
+    return res.status(400).json({ error: 'Backup file is not valid. Re-export and try again.' });
+  }
+
+  let vault;
+  try {
+    vault = decryptBackupToVault(raw, keyword);
+  } catch (e) {
+    return res.status(400).json({ error: 'Could not decrypt backup. Use the same keyword you used when exporting.' });
+  }
+
+  const users = getUsers();
+  const existing = users.find((u) => u.name.toLowerCase() === trimmedName.toLowerCase());
+  if (existing) {
+    if (!verifyKeyword(keyword, existing.salt, existing.hash)) {
+      return res.status(409).json({ error: 'A profile with this name already exists and the keyword does not match. Use the correct keyword to replace its data, or use a different profile name.' });
+    }
+    saveVault(existing.id, keyword, vault);
+    return res.json({ success: true, user: { id: existing.id, name: trimmedName }, replaced: true, message: 'Profile data replaced. You can log in now.' });
+  }
+
+  const id = crypto.randomUUID();
+  const { salt, hash } = hashKeyword(keyword);
+  users.push({ id, name: trimmedName, salt, hash });
+  saveUsers(users);
+  saveVault(id, keyword, vault);
+
+  res.status(201).json({ success: true, user: { id, name: trimmedName }, message: 'Profile restored. You can log in now.' });
+});
+
+/* Export all profiles' vaults (encrypted as-is, no decryption). For backup/restore on another device. */
+app.get('/api/export-all', (req, res) => {
+  const users = getUsers();
+  const items = [];
+  for (const u of users) {
+    const raw = readVaultEncrypted(u.id);
+    items.push({ id: u.id, name: u.name, encryptedVault: raw || '' });
+  }
+  const filename = `family-vault-all-${new Date().toISOString().slice(0, 10)}.json`;
+  res.setHeader('Content-Type', 'application/json');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(JSON.stringify(items, null, 0));
+});
+
+/* Import all: restore every profile from an "export all" file. Body: { items: [ { name, keyword, encryptedVault } ] }. */
+app.post('/api/import-all', (req, res) => {
+  const { items: itemsRaw } = req.body || {};
+  if (!Array.isArray(itemsRaw) || itemsRaw.length === 0) {
+    return res.status(400).json({ error: 'Items array is required (array of { name, keyword, encryptedVault })' });
+  }
+  const users = getUsers();
+  const results = { created: 0, replaced: 0, errors: [] };
+  for (let i = 0; i < itemsRaw.length; i++) {
+    const { name, keyword, encryptedVault } = itemsRaw[i] || {};
+    const trimmedName = name != null ? String(name).trim() : '';
+    if (!trimmedName || !keyword || encryptedVault == null) {
+      results.errors.push({ index: i, name: trimmedName || '(empty)', error: 'Missing name, keyword, or encryptedVault' });
+      continue;
+    }
+    const kwValidation = validateKeywordStrong(keyword);
+    if (!kwValidation.valid) {
+      results.errors.push({ index: i, name: trimmedName, error: kwValidation.error });
+      continue;
+    }
+    const existing = users.find((u) => u.name.toLowerCase() === trimmedName.toLowerCase());
+    if (existing) {
+      try {
+        const vault = decryptBackupToVault(encryptedVault, keyword);
+        if (!verifyKeyword(keyword, existing.salt, existing.hash)) {
+          results.errors.push({ index: i, name: trimmedName, error: 'Keyword does not match existing profile' });
+          continue;
+        }
+        saveVault(existing.id, keyword, vault);
+        results.replaced++;
+      } catch (e) {
+        results.errors.push({ index: i, name: trimmedName, error: e.message || 'Decrypt failed' });
+      }
+      continue;
+    }
+    try {
+      const id = crypto.randomUUID();
+      const { salt, hash } = hashKeyword(keyword);
+      users.push({ id, name: trimmedName, salt, hash });
+      saveUsers(users);
+      writeVaultEncrypted(id, encryptedVault);
+      results.created++;
+    } catch (e) {
+      results.errors.push({ index: i, name: trimmedName, error: e.message || 'Create failed' });
+    }
+  }
+  res.json({ success: true, ...results });
 });
 
 app.post('/api/users', (req, res) => {
@@ -339,7 +453,14 @@ app.post('/api/vault/import', requireAuth, (req, res) => {
   const modeOk = mode === 'replace' || mode === 'merge';
   if (!modeOk) return res.status(400).json({ error: 'Mode must be "replace" or "merge"' });
   try {
-    const raw = Buffer.from(dataBase64, 'base64').toString('utf8');
+    const base64Clean = String(dataBase64).replace(/\s/g, '');
+    let raw;
+    try {
+      raw = Buffer.from(base64Clean, 'base64').toString('utf8');
+    } catch (e) {
+      return res.status(400).json({ error: 'Backup file is not valid (invalid encoding). Re-export and try again.' });
+    }
+    raw = raw.replace(/^\uFEFF/, '');
     const imported = decryptBackupToVault(raw, req.session.keyword);
     let vault = getVault(req.session.userId, req.session.keyword);
     if (mode === 'replace') {
@@ -359,7 +480,11 @@ app.post('/api/vault/import', requireAuth, (req, res) => {
     saveVault(req.session.userId, req.session.keyword, vault, req.session.recoveryKeyword);
     res.json({ success: true, vault: { passwords: vault.passwords.length, notes: vault.notes.length } });
   } catch (e) {
-    res.status(400).json({ error: 'Invalid or corrupted backup file, or wrong keyword' });
+    const msg = e.message || '';
+    if (msg.includes('keyword') || msg.includes('Invalid') || msg.includes('corrupted') || msg.includes('parse')) {
+      return res.status(400).json({ error: 'Could not decrypt backup. Use the same profile and keyword you used when exporting.' });
+    }
+    return res.status(400).json({ error: 'Import failed. Use the same profile and keyword you used when exporting.' });
   }
 });
 

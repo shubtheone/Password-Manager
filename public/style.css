@@ -110,6 +110,59 @@ body {
   color: var(--accent);
 }
 
+.restore-backup-btn {
+  margin-top: 1.5rem;
+  padding: 0.6rem 1.25rem;
+  border: var(--border-width) solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  cursor: pointer;
+  font-family: inherit;
+  font-weight: 600;
+  border-radius: var(--radius);
+}
+
+.restore-backup-btn:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.restore-panel {
+  margin-top: 1.5rem;
+  padding: 1.25rem;
+  max-width: 400px;
+  background: var(--bg-card);
+  border: var(--border-width) solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.restore-panel.hidden {
+  display: none !important;
+}
+
+.restore-panel h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+}
+
+.restore-panel input[type="text"],
+.restore-panel input[type="password"] {
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.6rem 1rem;
+  border: var(--border-width) solid var(--border);
+  background: var(--bg-input);
+  color: var(--text);
+  font-size: 1rem;
+  border-radius: var(--radius);
+}
+
+.restore-panel .block-btn {
+  margin-bottom: 0.25rem;
+}
+
 /* ----- Auth & Create user ----- */
 #auth-screen,
 #create-user-screen {

@@ -29,6 +29,8 @@ let state = {
   autoLockMinutes: 5,
   inactivityTimerId: null,
   pendingImportFile: null,
+  restoreFile: null,
+  restoreAllItems: [],
 };
 
 async function api(path, options = {}) {
@@ -105,8 +107,148 @@ $('add-profile-btn')?.addEventListener('click', () => {
   $('create-keyword').value = '';
   if ($('create-recovery-keyword')) $('create-recovery-keyword').value = '';
   updateKeywordRequirements('');
+  $('restore-backup-panel').classList.add('hidden');
   showScreen('createUser');
   setTimeout(() => $('create-name').focus(), 100);
+});
+
+$('restore-backup-btn')?.addEventListener('click', () => {
+  const panel = $('restore-backup-panel');
+  panel.classList.toggle('hidden');
+  if (!panel.classList.contains('hidden')) {
+    $('restore-name').value = '';
+    $('restore-keyword').value = '';
+    $('restore-file').value = '';
+    state.restoreFile = null;
+    $('restore-file-name').textContent = '';
+  }
+});
+
+$('restore-file-btn')?.addEventListener('click', () => $('restore-file').click());
+
+$('restore-file')?.addEventListener('change', (e) => {
+  const file = e.target.files?.[0];
+  state.restoreFile = file || null;
+  $('restore-file-name').textContent = file ? file.name : '';
+});
+
+$('restore-cancel-btn')?.addEventListener('click', () => {
+  $('restore-backup-panel').classList.add('hidden');
+});
+
+$('export-all-btn')?.addEventListener('click', async () => {
+  try {
+    const res = await fetch('/api/export-all', { credentials: 'include', method: 'GET' });
+    if (!res.ok) throw new Error('Export failed');
+    const blob = await res.blob();
+    const filename = res.headers.get('Content-Disposition')?.match(/filename="?([^";]+)"?/)?.[1] || `family-vault-all-${new Date().toISOString().slice(0, 10)}.json`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast('All profiles exported', true);
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+$('restore-all-file-btn')?.addEventListener('click', () => $('restore-all-file').click());
+
+$('restore-all-file')?.addEventListener('change', async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = '';
+  if (!file) return;
+  const text = await file.text();
+  let items;
+  try {
+    items = JSON.parse(text);
+  } catch (_) {
+    toast('Invalid file. Use the file from "Export all profiles".');
+    return;
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    toast('File has no profiles.');
+    return;
+  }
+  state.restoreAllItems = items;
+  const container = $('restore-all-keywords');
+  container.innerHTML = items.map((it, i) => `
+    <div class="restore-all-row">
+      <label>${escapeHtml(it.name || 'Profile ' + (i + 1))}</label>
+      <div class="input-eye-row">
+        <input type="password" id="restore-all-kw-${i}" data-index="${i}" placeholder="Keyword" class="restore-all-kw" autocomplete="off" />
+        <button type="button" class="eye-btn" data-target="restore-all-kw-${i}" title="Show/hide">👁</button>
+      </div>
+    </div>
+  `).join('');
+  $('restore-all-submit-btn').classList.remove('hidden');
+});
+
+$('restore-all-keywords')?.addEventListener('click', (ev) => {
+  const btn = ev.target.closest('.eye-btn');
+  if (!btn || !btn.dataset.target) return;
+  const target = $(btn.dataset.target);
+  if (!target) return;
+  const showing = target.type === 'text';
+  target.type = showing ? 'password' : 'text';
+  btn.textContent = showing ? '👁' : '🙈';
+});
+
+$('restore-all-submit-btn')?.addEventListener('click', async () => {
+  const items = state.restoreAllItems;
+  if (!items.length) return;
+  const keywords = items.map((_, i) => {
+    const inp = document.querySelector(`.restore-all-kw[data-index="${i}"]`);
+    return inp ? inp.value : '';
+  });
+  const payload = items.map((it, i) => ({
+    name: it.name,
+    keyword: keywords[i] || '',
+    encryptedVault: it.encryptedVault,
+  }));
+  try {
+    const data = await api('/api/import-all', { method: 'POST', body: { items: payload } });
+    await loadUsers();
+    toast(`Done: ${data.created} created, ${data.replaced} replaced.${data.errors?.length ? ' ' + data.errors.length + ' errors.' : ''}`, true);
+    state.restoreAllItems = [];
+    $('restore-all-keywords').innerHTML = '';
+    $('restore-all-submit-btn').classList.add('hidden');
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+$('restore-submit-btn')?.addEventListener('click', async () => {
+  const name = $('restore-name').value.trim();
+  const keyword = $('restore-keyword').value;
+  const file = state.restoreFile;
+  if (!name || !keyword) {
+    toast('Enter profile name and keyword');
+    return;
+  }
+  if (!validateKeywordClient(keyword).all) {
+    toast('Keyword must meet requirements (8+ chars, upper, lower, number, symbol)');
+    return;
+  }
+  if (!file) {
+    toast('Choose a backup file');
+    return;
+  }
+  const reader = new FileReader();
+  reader.onload = async () => {
+    let dataBase64 = reader.result;
+    if (typeof dataBase64 === 'string' && dataBase64.startsWith('data:')) dataBase64 = dataBase64.split(',')[1];
+    try {
+      await api('/api/import-backup', { method: 'POST', body: { name, keyword, data: dataBase64 } });
+      await loadUsers();
+      $('restore-backup-panel').classList.add('hidden');
+      toast('Profile restored. You can log in now.', true);
+    } catch (err) {
+      toast(err.message);
+    }
+  };
+  reader.readAsDataURL(file);
 });
 
 $('create-back')?.addEventListener('click', () => showScreen('profile'));
