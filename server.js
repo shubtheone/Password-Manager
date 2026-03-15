@@ -17,6 +17,8 @@ const {
   decryptBackupToVault,
   resetUserKeyword,
   recoverKeyword,
+  changeKeyword,
+  changeRecoveryKeyword,
   encryptRecoveryKeywordForStorage,
   decryptRecoveryKeywordFromStorage,
   getVaultFromRecovery,
@@ -318,6 +320,37 @@ app.post('/api/auth/recover-keyword', (req, res) => {
   }
 });
 
+app.post('/api/auth/change-keyword', requireAuth, (req, res) => {
+  const { currentKeyword, newKeyword } = req.body || {};
+  if (!currentKeyword || !newKeyword) {
+    return res.status(400).json({ error: 'Current keyword and new keyword are required' });
+  }
+  const kwValidation = validateKeywordStrong(newKeyword);
+  if (!kwValidation.valid) return res.status(400).json({ error: kwValidation.error });
+  try {
+    changeKeyword(req.session.userId, currentKeyword, newKeyword);
+    req.session.keyword = newKeyword;
+    res.json({ success: true, message: 'Keyword changed. Use your new keyword next time you log in.' });
+  } catch (e) {
+    return res.status(400).json({ error: e.message || 'Change failed' });
+  }
+});
+
+app.post('/api/auth/change-recovery-keyword', requireAuth, (req, res) => {
+  const { keyword, newRecoveryKeyword } = req.body || {};
+  if (!keyword || !newRecoveryKeyword) {
+    return res.status(400).json({ error: 'Main keyword and new recovery keyword are required' });
+  }
+  const kwValidation = validateKeywordStrong(newRecoveryKeyword);
+  if (!kwValidation.valid) return res.status(400).json({ error: kwValidation.error });
+  try {
+    changeRecoveryKeyword(req.session.userId, keyword, newRecoveryKeyword);
+    res.json({ success: true, message: 'Recovery keyword changed.' });
+  } catch (e) {
+    return res.status(400).json({ error: e.message || 'Change failed' });
+  }
+});
+
 app.post('/api/auth/logout', (req, res) => {
   req.session.destroy(() => {});
   res.json({ success: true });
@@ -325,7 +358,10 @@ app.post('/api/auth/logout', (req, res) => {
 
 app.get('/api/auth/check', (req, res) => {
   if (req.session && req.session.userId && req.session.keyword) {
-    return res.json({ authenticated: true, userName: req.session.userName, userId: req.session.userId });
+    const users = getUsers();
+    const user = users.find((u) => u.id === req.session.userId);
+    const hasRecovery = !!(user && user.recovery_salt && user.recovery_hash);
+    return res.json({ authenticated: true, userName: req.session.userName, userId: req.session.userId, hasRecovery });
   }
   res.json({ authenticated: false });
 });

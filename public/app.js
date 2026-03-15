@@ -282,6 +282,93 @@ $('create-keyword')?.addEventListener('focus', () => {
   updateKeywordRequirements($('create-keyword').value);
 });
 
+function updateChangeKwRequirements(keyword) {
+  const v = validateKeywordClient(keyword);
+  const ids = ['change-kw-len', 'change-kw-upper', 'change-kw-lower', 'change-kw-num', 'change-kw-sym'];
+  const keys = ['len', 'upper', 'lower', 'num', 'sym'];
+  keys.forEach((k, i) => {
+    const el = $(ids[i]);
+    if (el) el.classList.toggle('met', v[k]);
+  });
+  const btn = $('change-kw-submit');
+  if (btn) btn.disabled = !v.all;
+}
+
+function updateChangeRecRequirements(keyword) {
+  const v = validateKeywordClient(keyword);
+  const ids = ['change-rec-len', 'change-rec-upper', 'change-rec-lower', 'change-rec-num', 'change-rec-sym'];
+  const keys = ['len', 'upper', 'lower', 'num', 'sym'];
+  keys.forEach((k, i) => {
+    const el = $(ids[i]);
+    if (el) el.classList.toggle('met', v[k]);
+  });
+  const btn = $('change-rec-submit');
+  if (btn) btn.disabled = !v.all;
+}
+
+$('change-kw-new')?.addEventListener('input', () => updateChangeKwRequirements($('change-kw-new').value));
+$('change-kw-new')?.addEventListener('focus', () => updateChangeKwRequirements($('change-kw-new').value));
+$('change-rec-new')?.addEventListener('input', () => updateChangeRecRequirements($('change-rec-new').value));
+$('change-rec-new')?.addEventListener('focus', () => updateChangeRecRequirements($('change-rec-new').value));
+
+$('change-keyword-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const currentKeyword = $('change-kw-current')?.value;
+  const newKeyword = $('change-kw-new')?.value;
+  const confirmKeyword = $('change-kw-confirm')?.value;
+  if (!currentKeyword || !newKeyword) {
+    toast('Enter current and new keyword');
+    return;
+  }
+  if (!validateKeywordClient(newKeyword).all) {
+    toast('New keyword must meet all requirements');
+    return;
+  }
+  if (newKeyword !== confirmKeyword) {
+    toast('New keyword and confirmation do not match');
+    return;
+  }
+  try {
+    await api('/api/auth/change-keyword', { method: 'POST', body: { currentKeyword, newKeyword } });
+    toast('Keyword changed. Use your new keyword next time you log in.');
+    $('change-kw-current').value = '';
+    $('change-kw-new').value = '';
+    $('change-kw-confirm').value = '';
+    updateChangeKwRequirements('');
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
+$('change-recovery-form')?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const keyword = $('change-rec-main')?.value;
+  const newRecoveryKeyword = $('change-rec-new')?.value;
+  const confirmRecovery = $('change-rec-confirm')?.value;
+  if (!keyword || !newRecoveryKeyword) {
+    toast('Enter main keyword and new recovery keyword');
+    return;
+  }
+  if (!validateKeywordClient(newRecoveryKeyword).all) {
+    toast('New recovery keyword must meet all requirements');
+    return;
+  }
+  if (newRecoveryKeyword !== confirmRecovery) {
+    toast('New recovery keyword and confirmation do not match');
+    return;
+  }
+  try {
+    await api('/api/auth/change-recovery-keyword', { method: 'POST', body: { keyword, newRecoveryKeyword } });
+    toast('Recovery keyword changed.');
+    $('change-rec-main').value = '';
+    $('change-rec-new').value = '';
+    $('change-rec-confirm').value = '';
+    updateChangeRecRequirements('');
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
 $('create-user-form')?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const name = $('create-name').value.trim();
@@ -378,6 +465,7 @@ async function loadVault() {
   const check = await api('/api/auth/check');
   state.userName = check.userName;
   if (check.userId) state.userId = check.userId;
+  state.hasRecovery = !!check.hasRecovery;
 }
 
 function loadAutoLockSettings() {
@@ -438,6 +526,10 @@ $('settings-btn')?.addEventListener('click', () => {
   if (panel.classList.contains('hidden')) {
     panel.classList.remove('hidden');
     loadAutoLockSettings();
+    const recSection = $('change-recovery-section');
+    if (recSection) recSection.classList.toggle('hidden', !state.hasRecovery);
+    updateChangeKwRequirements($('change-kw-new')?.value || '');
+    updateChangeRecRequirements($('change-rec-new')?.value || '');
   } else {
     panel.classList.add('hidden');
   }

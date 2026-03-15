@@ -121,6 +121,68 @@
           </div>
         </div>
         <div class="settings-section">
+          <h4>Change main keyword</h4>
+          <p class="hint">You will need your new keyword to log in next time.</p>
+          <form id="change-keyword-form">
+            <label>Current keyword</label>
+            <div class="input-eye-row">
+              <input type="password" id="change-kw-current" placeholder="Current keyword" autocomplete="off" />
+              <button type="button" class="eye-btn" data-target="change-kw-current" title="Show/hide">👁</button>
+            </div>
+            <label>New keyword</label>
+            <div class="input-eye-row">
+              <input type="password" id="change-kw-new" placeholder="New keyword" autocomplete="off" />
+              <button type="button" class="eye-btn" data-target="change-kw-new" title="Show/hide">👁</button>
+            </div>
+            <ul id="change-kw-requirements" class="keyword-requirements">
+              <li id="change-kw-len">At least 8 characters</li>
+              <li id="change-kw-upper">One uppercase letter</li>
+              <li id="change-kw-lower">One lowercase letter</li>
+              <li id="change-kw-num">One number</li>
+              <li id="change-kw-sym">One symbol (!@#$%^&*…)</li>
+            </ul>
+            <label>Confirm new keyword</label>
+            <div class="input-eye-row">
+              <input type="password" id="change-kw-confirm" placeholder="Confirm new keyword" autocomplete="off" />
+              <button type="button" class="eye-btn" data-target="change-kw-confirm" title="Show/hide">👁</button>
+            </div>
+            <div style="margin-top: 0.5rem;">
+              <button type="submit" id="change-kw-submit" class="primary-btn">Change keyword</button>
+            </div>
+          </form>
+        </div>
+        <div class="settings-section hidden" id="change-recovery-section">
+          <h4>Change recovery keyword</h4>
+          <p class="hint">Only if you have a recovery keyword set. Use this to set a new recovery phrase.</p>
+          <form id="change-recovery-form">
+            <label>Your main keyword</label>
+            <div class="input-eye-row">
+              <input type="password" id="change-rec-main" placeholder="Main keyword" autocomplete="off" />
+              <button type="button" class="eye-btn" data-target="change-rec-main" title="Show/hide">👁</button>
+            </div>
+            <label>New recovery keyword</label>
+            <div class="input-eye-row">
+              <input type="password" id="change-rec-new" placeholder="New recovery keyword" autocomplete="off" />
+              <button type="button" class="eye-btn" data-target="change-rec-new" title="Show/hide">👁</button>
+            </div>
+            <ul id="change-rec-requirements" class="keyword-requirements">
+              <li id="change-rec-len">At least 8 characters</li>
+              <li id="change-rec-upper">One uppercase letter</li>
+              <li id="change-rec-lower">One lowercase letter</li>
+              <li id="change-rec-num">One number</li>
+              <li id="change-rec-sym">One symbol (!@#$%^&*…)</li>
+            </ul>
+            <label>Confirm new recovery keyword</label>
+            <div class="input-eye-row">
+              <input type="password" id="change-rec-confirm" placeholder="Confirm" autocomplete="off" />
+              <button type="button" class="eye-btn" data-target="change-rec-confirm" title="Show/hide">👁</button>
+            </div>
+            <div style="margin-top: 0.5rem;">
+              <button type="submit" id="change-rec-submit" class="primary-btn">Change recovery keyword</button>
+            </div>
+          </form>
+        </div>
+        <div class="settings-section">
           <h4>Backup</h4>
           <button type="button" id="export-backup-btn" class="block-btn">Export encrypted backup</button>
           <div class="import-row">

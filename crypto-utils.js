@@ -296,6 +296,64 @@ function recoverKeyword(userId, recoveryKeyword, newMainKeyword) {
   writeRecoveryVaultEncrypted(userId, encryptVaultData(JSON.stringify({ passwords: vault.passwords || [], notes: vault.notes || [] }), recoveryKeyword));
 }
 
+/**
+ * Change main keyword while logged in (user knows current keyword).
+ * Re-encrypts vault and, if present, recovery_key_encrypted with the new keyword.
+ */
+function changeKeyword(userId, currentKeyword, newMainKeyword) {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) throw new Error('User not found');
+  const user = users[idx];
+  if (!verifyKeyword(currentKeyword, user.salt, user.hash)) {
+    throw new Error('Current keyword is wrong');
+  }
+  const vault = getVault(userId, currentKeyword);
+  const { salt, hash } = hashKeyword(newMainKeyword);
+  let recoveryKeyEncrypted = user.recovery_key_encrypted;
+  if (recoveryKeyEncrypted) {
+    const recoveryKeywordPlain = decryptRecoveryKeywordFromStorage(recoveryKeyEncrypted, currentKeyword, userId);
+    recoveryKeyEncrypted = encryptRecoveryKeywordForStorage(recoveryKeywordPlain, newMainKeyword, userId);
+  }
+  users[idx] = {
+    ...user,
+    salt,
+    hash,
+    recovery_key_encrypted: recoveryKeyEncrypted,
+  };
+  saveUsers(users);
+  saveVault(userId, newMainKeyword, vault);
+}
+
+/**
+ * Change recovery keyword (user knows main keyword).
+ * Re-encrypts recovery vault with the new recovery keyword and updates recovery salt/hash and storage blob.
+ */
+function changeRecoveryKeyword(userId, mainKeyword, newRecoveryKeyword) {
+  const users = getUsers();
+  const idx = users.findIndex((u) => u.id === userId);
+  if (idx === -1) throw new Error('User not found');
+  const user = users[idx];
+  if (!verifyKeyword(mainKeyword, user.salt, user.hash)) {
+    throw new Error('Main keyword is wrong');
+  }
+  if (!user.recovery_salt || !user.recovery_hash) {
+    throw new Error('This profile has no recovery keyword set');
+  }
+  const oldRecoveryKeyword = decryptRecoveryKeywordFromStorage(user.recovery_key_encrypted, mainKeyword, userId);
+  const vault = getVaultFromRecovery(userId, oldRecoveryKeyword);
+  const { salt: rSalt, hash: rHash } = hashKeyword(newRecoveryKeyword);
+  const recoveryKeyEncrypted = encryptRecoveryKeywordForStorage(newRecoveryKeyword, mainKeyword, userId);
+  users[idx] = {
+    ...user,
+    recovery_salt: rSalt,
+    recovery_hash: rHash,
+    recovery_key_encrypted: recoveryKeyEncrypted,
+  };
+  saveUsers(users);
+  writeRecoveryVaultEncrypted(userId, encryptVaultData(JSON.stringify({ passwords: vault.passwords || [], notes: vault.notes || [] }), newRecoveryKeyword));
+}
+
 module.exports = {
   ensureDataDir,
   getUsers,
@@ -319,4 +377,6 @@ module.exports = {
   decryptBackupToVault,
   resetUserKeyword,
   recoverKeyword,
+  changeKeyword,
+  changeRecoveryKeyword,
 };
